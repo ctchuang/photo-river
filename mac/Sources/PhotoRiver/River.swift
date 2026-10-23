@@ -9,6 +9,7 @@ let S = 0.42
 private let lanes: [Float] = [-0.95, -0.1, 0.8, 1.7, 2.6]
 private let poolSize = 170
 private let fovY: Float = 40 * .pi / 180
+private let minCamZ = 7.0, maxCamZ = 34.0   // camera distance: fully zoomed in, fully zoomed out
 private let textureScale: CGFloat = 1.5   // card texture pixels per card point
 private let fullScale: CGFloat = 5        // placeholder "original" pixels per card point
 let speeds: [(name: String, value: Double)] = [("Slow", 1.1), ("Medium", 2.2), ("Fast", 5.5)]
@@ -68,6 +69,7 @@ private final class Card {
     var glow: Float = 0
     var model = matrix_identity_float4x4
     var request: PHImageRequestID?
+    var loading = false        // an image (thumbnail or placeholder) has been asked for
 }
 
 /// The Time River: owns the simulation (scroll position, camera, flow), the card pool and its images,
@@ -88,7 +90,7 @@ final class River: NSObject, MTKViewDelegate {
     private var dragging = false
     private var jump: (from: Double, to: Double, start: Double, dur: Double)?
     private var hover = -1
-    private var camZ = 15.0, camZTarget = 15.0
+    private var camZ = minCamZ, camZTarget = minCamZ   // start zoomed all the way in
     private var ended = false
     private var mouse: CGPoint?            // view points, origin bottom-left
     private var viewSize = CGSize(width: 1, height: 1)
@@ -260,7 +262,7 @@ final class River: NSObject, MTKViewDelegate {
         ended = false
     }
 
-    func zoom(by factor: Double) { camZTarget = max(7, min(34, camZTarget * factor)) }
+    func zoom(by factor: Double) { camZTarget = max(minCamZ, min(maxCamZ, camZTarget * factor)) }
 
     func click(at p: CGPoint) {
         if ui.focus != nil { closeFocus(); return }
@@ -363,10 +365,18 @@ final class River: NSObject, MTKViewDelegate {
         c.p = params(i)
         c.texture = nil
         c.glow = 0
+        c.loading = false
         active[i] = c
-        let token = c.token, p = c.p!
+        return c
+    }
 
-        if lib.assets.isEmpty { paintPlaceholder(c, token: token, p: p); return c }
+    /// Asks for a card's image. Deferred while a jump sweeps past thousands of photos, so PhotoKit is not
+    /// flooded with requests for cards that are gone a frame later.
+    private func load(_ c: Card) {
+        guard let lib else { return }
+        c.loading = true
+        let i = c.index, token = c.token, p = c.p!
+        if lib.assets.isEmpty { paintPlaceholder(c, token: token, p: p); return }
         let o = PHImageRequestOptions()
         o.deliveryMode = .opportunistic
         o.resizeMode = .fast
@@ -384,7 +394,6 @@ final class River: NSObject, MTKViewDelegate {
                 DispatchQueue.main.async { if c.token == token { c.texture = t } }
             }
         }
-        return c
     }
 
     private func paintPlaceholder(_ c: Card, token: Int, p: CardParams) {
@@ -462,6 +471,7 @@ final class River: NSObject, MTKViewDelegate {
         var fronts: [(z: Float, d: CardDraw)] = [], backs: [CardDraw] = []
         for (i, c) in active {
             let p = c.p!
+            if !c.loading && jump == nil { load(c) }
             let x = Float(Double(i) * S - pos) + p.x
             let py = p.y + sin(t * p.sway + p.phase) * p.bob * sw
             let rx = p.rx + sin(t * 0.7 * p.sway + p.phase) * 0.05 * sw

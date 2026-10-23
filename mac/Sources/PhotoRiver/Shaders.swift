@@ -56,7 +56,7 @@ fragment float4 card_fragment(MeshOut in [[stage_in]], constant CardU &u [[buffe
   c.rgb = mix(c.rgb, float3(1.0), ring * u.glow);
   c.rgb += float3(0.06) * smoothstep(0.4, 0.0, in.uv.y) * (1.0 - u.refl);
   float a = inside * u.opacity;
-  if (u.refl > 0.5) a *= (1.0 - in.uv.y) * (1.0 - in.uv.y) * 0.42;
+  if (u.refl > 0.5) a *= (1.0 - in.uv.y) * (1.0 - in.uv.y) * 0.105;
   return float4(c.rgb, a);
 }
 
