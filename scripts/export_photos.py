@@ -13,6 +13,7 @@ Run (Terminal needs Full Disk Access: System Settings > Privacy & Security > Ful
     uv run scripts/export_photos.py > data/photos.json            # minimal: time + GPS only
     uv run scripts/export_photos.py --full > data/photos.json     # also people, labels, score, camera
     uv run scripts/export_photos.py --movies > data/photos.json   # include videos too
+    uv run scripts/export_photos.py --library PATH > data/photos.json  # a specific .photoslibrary
 
 Output shape (column arrays, same index = same photo):
     {"meta": {...}, "t": [unix seconds], "lat": [..|null], "lng": [..|null],
@@ -29,8 +30,17 @@ except ImportError:
 
 full = "--full" in sys.argv
 movies = "--movies" in sys.argv
+library = sys.argv[sys.argv.index("--library") + 1] if "--library" in sys.argv[:-1] else None
 
-db = osxphotos.PhotosDB()
+# PhotosDB() alone finds the library through com.apple.Photos.plist, which macOS can refuse
+# to let us read; fall back to the System Photo Library that photolibraryd records.
+library = library or osxphotos.utils.get_last_library_path() or osxphotos.utils.get_system_library_path()
+if not library:
+    sys.stderr.write("Could not find your Photos library. Pass it explicitly:\n"
+                     '    uv run scripts/export_photos.py --library ~/Pictures/"Photos Library.photoslibrary"\n')
+    sys.exit(1)
+
+db = osxphotos.PhotosDB(library)
 photos = db.photos(images=True, movies=movies, intrash=False)
 sys.stderr.write(f"library: {db.library_path}\nphotos: {len(photos)}\n")
 

@@ -67,7 +67,7 @@ uv run scripts/export_photos.py > data/photos.json
 
 If you prefer to activate the environment yourself, `source .venv/bin/activate` and then `python scripts/export_photos.py > data/photos.json` does the same thing.
 
-The default export is minimal: timestamps and GPS only. Add `--full` to also export people, scene labels, Apple's aesthetic score and the camera model (used by future views), and `--movies` to include videos. The output is a single JSON file that stays in `data/`, which is ignored by git.
+The default export is minimal: timestamps and GPS only. Add `--full` to also export people, scene labels, Apple's aesthetic score and the camera model (used by future views), and `--movies` to include videos. The exporter uses your System Photo Library; to read a different one, add `--library ~/Pictures/"Other Library.photoslibrary"`. The output is a single JSON file that stays in `data/`, which is ignored by git.
 
 Reload the page. The synthetic badge disappears and the river is yours.
 
