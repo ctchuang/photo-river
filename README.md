@@ -2,6 +2,8 @@
 
 A slow river of your photos.
 
+![Time River: photo cards from a 2010 trip to Rome drift above the water, with the year and month timeline along the bottom](docs/images/time-river.jpg)
+
 Photo River turns twenty years of an Apple Photos library into a cinematic, local-first Mac app. Nothing is uploaded: the app reads your library in place through Apple's PhotoKit (dates, locations, the previews Photos already keeps) and draws it with Metal.
 
 One view exists today:
