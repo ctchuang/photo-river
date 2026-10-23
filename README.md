@@ -71,9 +71,15 @@ The default export is minimal: timestamps and GPS only. Add `--full` to also exp
 
 Reload the page. The synthetic badge disappears and the river is yours.
 
-### Thumbnails (coming next)
+### Thumbnails
 
-Time River can show real thumbnails instead of generated placeholders. Set `meta.thumbs` in `data/photos.json` to a path template such as `../data/thumbs/{i}.jpg`, where `{i}` is the photo's index in the export. A thumbnail export script is the next item on the roadmap.
+By default the cards are painted placeholders. To see your real photos, add `--thumbs`:
+
+```sh
+uv run scripts/export_photos.py --thumbs > data/photos.json
+```
+
+This writes one small JPEG per photo to `data/thumbs/` (384 px on the long edge, about 30 KB each, so roughly 650 MB for 20,000 photos), made with macOS `sips` from the previews Photos already keeps, so edits and rotation are applied and iCloud originals are not downloaded. Thumbnails are named by the photo's Photos ID: re-running only makes the ones that are new, and removes the ones for photos that are gone. Like `data/photos.json`, `data/thumbs/` is ignored by git.
 
 ## Repository layout
 
@@ -86,7 +92,7 @@ docs/       PRD and data format
 
 ## Privacy
 
-`export_photos.py` reads only metadata and writes one JSON file into `data/`, which `.gitignore` keeps out of the repository. No image data is read, and nothing is sent anywhere. The pages are static files served from your own machine; the only network requests are for the three.js library and a web font from public CDNs.
+`export_photos.py` only reads the Photos library. It writes one JSON file into `data/`, plus thumbnails into `data/thumbs/` when you pass `--thumbs`; `.gitignore` keeps both out of the repository. Nothing is sent anywhere. The pages are static files served from your own machine; the only network requests are for the three.js library and a web font from public CDNs.
 
 ## License
 

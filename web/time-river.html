@@ -193,7 +193,7 @@ body { margin: 0; background: var(--bg-bot); color: var(--fg); font-family: var(
 
   // ---------- state ----------
   const state = { pos: 0, speed: 2.2, playing: false, dragging: false, jump: null, focus: -1, hover: -1, camZ: 15, camZTarget: 15, ended: false, synthetic: false, thumbs: null };
-  let N = 0, T, LAT, LNG, GEO, TRIP, HOUR;
+  let N = 0, T, LAT, LNG, GEO, TRIP, HOUR, IDS;
   let renderer, scene, camera, raycaster, stars, dust, water;
   const pool = [], active = new Map(), free = [];
   let noisePattern = null;
@@ -212,6 +212,7 @@ body { margin: 0; background: var(--bg-bot); color: var(--fg); font-family: var(
     for (let i = 0; i < N; i++) { const la = d.lat[i], lo = d.lng[i]; if (la != null && lo != null) { LAT[i] = la; LNG[i] = lo; GEO[i] = 1; } }
     state.synthetic = !!(d.meta && d.meta.source === 'synthetic');
     state.thumbs = d.meta && d.meta.thumbs ? d.meta.thumbs : null;
+    IDS = d.id || null;
 
     // home per year = most common 1° cell; a photo >150 km from that is "away"
     const years = new Map();
@@ -458,8 +459,15 @@ body { margin: 0; background: var(--bg-bot); color: var(--fg); font-family: var(
     if (e.cv.width !== W || e.cv.height !== H) { e.cv.width = W; e.cv.height = H; }
     if (state.thumbs) {
       e.ctx.fillStyle = '#1a2238'; e.ctx.fillRect(0, 0, W, H); e.tex.needsUpdate = true;
-      const img = new Image(); img.onload = () => { if (e.i !== i) return; e.ctx.drawImage(img, 0, 0, W, H); e.tex.needsUpdate = true; };
-      img.src = state.thumbs.replace('{i}', String(i));
+      const img = new Image();
+      img.onload = () => {
+        if (e.i !== i) return;
+        // cover-crop: fill the card without stretching, whatever the photo's own aspect
+        const s = Math.max(W / img.naturalWidth, H / img.naturalHeight), dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+        e.ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh); e.tex.needsUpdate = true;
+      };
+      img.onerror = () => { if (e.i !== i) return; paintFake(e.ctx, W, H, i, p.kind); e.tex.needsUpdate = true; };
+      img.src = state.thumbs.replace('{i}', String(i)).replace('{id}', IDS ? IDS[i] : '');
     } else {
       paintFake(e.ctx, W, H, i, p.kind); e.tex.needsUpdate = true;
     }
