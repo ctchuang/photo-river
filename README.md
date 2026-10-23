@@ -10,7 +10,7 @@ Photo River turns twenty years of an Apple Photos library into a cinematic, loca
 
 One view exists today:
 
-- **Time River**: photo cards drift under a starfield, oldest to newest, with constant photo density. The river's coordinate is the photo index, not the clock, so a trip with 400 photos in three days flows slowly and an empty winter month passes in a blink. Scroll to zoom, drag (or two-finger swipe) to scrub, pull out the timeline at the bottom to jump to a year or month, and click a card: the river stops and the full image opens. ←/→ step through neighbouring photos; click or Esc returns to the river.
+- **Time River**: photo cards drift under a starfield, oldest to newest, with constant photo density. The river's coordinate is the photo index, not the clock, so a trip with 400 photos in three days flows slowly and an empty winter month passes in a blink. On a trackpad, move two fingers up and down to zoom (or pinch) and left and right to scrub through time; with a mouse, scroll to zoom and drag to scrub. Pull out the timeline at the bottom to jump to a year or month, and click a card: the river stops and the full image opens. ←/→ step through neighbouring photos; click or Esc returns to the river.
 
 The app also ships with a synthetic sample library (`data/sample/photos.json`, 20,613 fake photos over 2006–2026) so you can see it work without your own photos.
 
