@@ -15,7 +15,7 @@ The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](
 ## Requirements
 
 - macOS with the Photos app (the exporter reads the local Photos library database).
-- [Homebrew](https://brew.sh). Everything else is installed through it.
+- [Homebrew](https://brew.sh), used to install [uv](https://docs.astral.sh/uv/).
 - A modern browser with WebGL (Safari, Chrome, Firefox, Edge).
 
 ## Setup
@@ -26,15 +26,11 @@ The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
 
-2. Install `pipx` with Homebrew, then `osxphotos` with `pipx`. osxphotos is the open-source library that reads the Photos database; pipx keeps it in its own environment so it never fights with your system Python:
+2. Install [uv](https://docs.astral.sh/uv/) with Homebrew. uv manages the Python environment for the exporter; nothing is installed globally:
 
    ```sh
-   brew install pipx
-   pipx ensurepath
-   pipx install osxphotos
+   brew install uv
    ```
-
-   Open a new terminal window after `pipx ensurepath` so the `osxphotos` command is on your `PATH`.
 
 3. Give your terminal Full Disk Access, otherwise macOS will not let the exporter open the Photos database: System Settings → Privacy & Security → Full Disk Access → add Terminal (or iTerm, or whatever you use).
 
@@ -44,6 +40,14 @@ The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](
    git clone https://github.com/ctchuang/photo-river.git
    cd photo-river
    ```
+
+5. Create the project's virtual environment. `uv sync` reads `pyproject.toml` and `uv.lock`, downloads a matching Python if needed, and installs [osxphotos](https://github.com/RhetTbull/osxphotos) (the open-source library that reads the Photos database) into `.venv/` inside the repository:
+
+   ```sh
+   uv sync
+   ```
+
+   To remove everything later, delete the `.venv/` folder.
 
 ## Try it with the sample data
 
@@ -55,13 +59,13 @@ Then open <http://localhost:8000/web/time-river.html>. The page loads `data/phot
 
 ## Export your own library
 
-The exporter runs inside the pipx environment that has osxphotos:
+Run the exporter inside the project's `.venv/` with `uv run`:
 
 ```sh
-pipx run --spec osxphotos python3 scripts/export_photos.py > data/photos.json
+uv run scripts/export_photos.py > data/photos.json
 ```
 
-If you installed osxphotos another way, plain `python3 scripts/export_photos.py > data/photos.json` works as long as `import osxphotos` succeeds.
+If you prefer to activate the environment yourself, `source .venv/bin/activate` and then `python scripts/export_photos.py > data/photos.json` does the same thing.
 
 The default export is minimal: timestamps and GPS only. Add `--full` to also export people, scene labels, Apple's aesthetic score and the camera model (used by future views), and `--movies` to include videos. The output is a single JSON file that stays in `data/`, which is ignored by git.
 

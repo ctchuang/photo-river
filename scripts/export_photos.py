@@ -5,14 +5,14 @@ Everything runs on your Mac; nothing is uploaded. The output is a single JSON fi
 with timestamps and GPS, plus (with --full) people, scene labels, Apple's aesthetic
 score and camera model for later visualizations.
 
-Setup (once):
-    python3 -m pip install --user osxphotos
-    # or: brew install pipx && pipx install osxphotos
+Setup (once, from the repository root):
+    brew install uv
+    uv sync          # creates .venv/ with osxphotos
 
 Run (Terminal needs Full Disk Access: System Settings > Privacy & Security > Full Disk Access):
-    python3 scripts/export_photos.py > data/photos.json            # minimal: time + GPS only
-    python3 scripts/export_photos.py --full > data/photos.json     # also people, labels, score, camera
-    python3 scripts/export_photos.py --movies > data/photos.json   # include videos too
+    uv run scripts/export_photos.py > data/photos.json            # minimal: time + GPS only
+    uv run scripts/export_photos.py --full > data/photos.json     # also people, labels, score, camera
+    uv run scripts/export_photos.py --movies > data/photos.json   # include videos too
 
 Output shape (column arrays, same index = same photo):
     {"meta": {...}, "t": [unix seconds], "lat": [..|null], "lng": [..|null],
@@ -24,7 +24,7 @@ import sys, json, datetime as dt
 try:
     import osxphotos
 except ImportError:
-    sys.stderr.write("osxphotos is not installed. Run: python3 -m pip install --user osxphotos\n")
+    sys.stderr.write("osxphotos is not installed. Run `uv sync` in the repository root, then `uv run scripts/export_photos.py`.\n")
     sys.exit(1)
 
 full = "--full" in sys.argv

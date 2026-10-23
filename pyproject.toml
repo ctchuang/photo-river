@@ -1,0 +1,9 @@
+[project]
+name = "photo-river"
+version = "0.1.0"
+description = "Exporter for Photo River: Apple Photos metadata to JSON"
+requires-python = ">=3.10"
+dependencies = ["osxphotos"]
+
+[tool.uv]
+package = false

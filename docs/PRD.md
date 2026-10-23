@@ -100,7 +100,7 @@ Ordered roughly by how soon they are worth doing. Items marked **(agreed)** came
 - **Pages**: plain HTML files in `web/`, three.js r128 UMD from cdnjs, Outfit from Google Fonts, everything else inline. No bundler, no framework. Each page is one IIFE with clear sections (helpers, state, load, build, update, input, loop).
 - **Data**: `data/photos.json` column arrays (see `DATA.md`), loaded with a fallback to `data/sample/photos.json`. Homes and away/near-home flags are derived in the browser.
 - **Performance budget**: 20k–50k photos; 60 fps on an Apple-silicon laptop. Time River keeps a pool of 170 card meshes and paints or loads textures only as cards enter the view.
-- **Exporter**: Python 3 + osxphotos, installed through Homebrew → pipx. Reads only; writes one JSON.
+- **Exporter**: Python 3 + osxphotos, in a project `.venv/` managed by uv (`pyproject.toml` + `uv.lock`). Reads only; writes one JSON.
 - **Verification**: a local Playwright screenshot script (desktop and phone widths, console-error capture) was used during development; it is not part of the repository's runtime.
 
 ## 11. Privacy and data handling
