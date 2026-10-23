@@ -3,13 +3,14 @@
 #   make run      build and open it on your Photos library
 #   make sample   build and open it on the synthetic sample library
 #   make icon     redraw mac/AppIcon.icns from mac/icon/make-icon.swift
+#   make test     run the Swift tests (mac/Tests) and the exporter's Python tests (tests/)
 #   make clean    remove build output
 
 APP := build/PhotoRiver.app
 BIN := mac/.build/release/PhotoRiver
 ICON := mac/AppIcon.icns
 
-.PHONY: app run sample icon clean
+.PHONY: app run sample icon test clean
 
 app: $(ICON)
 	swift build -c release --package-path mac
@@ -32,6 +33,16 @@ $(ICON): mac/icon/make-icon.swift
 	  sips -z $$((s*2)) $$((s*2)) build/AppIcon-1024.png --out build/AppIcon.iconset/icon_$${s}x$${s}@2x.png >/dev/null; \
 	done
 	iconutil -c icns build/AppIcon.iconset -o $(ICON)
+
+# --disable-xctest: XCTest ships only with Xcode; these tests use Swift Testing, which the
+# Command Line Tools include. Their copy of the Testing macro plugin sits in a plugins/testing/
+# subfolder that the default build system misses whenever it recompiles the tests ("plugin for
+# module 'TestingMacros' not found"), so load it by path when it's there.
+TESTING_MACROS := $(wildcard $(shell xcode-select -p)/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib)
+
+test:
+	swift test --package-path mac --disable-xctest $(if $(TESTING_MACROS),-Xswiftc -load-plugin-library -Xswiftc $(TESTING_MACROS))
+	uv run python -m unittest discover tests
 
 run: app
 	open $(APP)

@@ -30,13 +30,14 @@ git clone https://github.com/ctchuang/photo-river.git
 cd photo-river
 make run        # build build/PhotoRiver.app and open it on your Photos library
 make sample     # the same app on the synthetic sample
+make test       # Swift tests for the app, Python tests for the exporter (needs uv, see below)
 ```
 
 The first time, macOS asks for access to your photos. If you decline, the app falls back to the synthetic sample; you can grant access later in System Settings → Privacy & Security → Photos.
 
 `make app` only builds. The app is signed ad hoc, so after a rebuild macOS may ask for photo access again.
 
-Cards use the small previews Photos already keeps; nothing is downloaded for them. Opening a photo whose original lives only in iCloud downloads it, with a progress bar.
+Photos you hid in Photos stay hidden: neither the app nor the exporter shows them, and Recently Deleted is never read. Cards use the small previews Photos already keeps; nothing is downloaded for them. Opening a photo whose original lives only in iCloud downloads it, with a progress bar.
 
 ## Optional: JSON exporter
 
@@ -54,9 +55,10 @@ See the docstring at the top of the script for all flags (`--movies`, `--thumbs`
 
 ```
 mac/        the app: a Swift package (Metal river, SwiftUI overlay, PhotoKit) and its Info.plist
-Makefile    builds and packages mac/ into build/PhotoRiver.app
+Makefile    builds and packages mac/ into build/PhotoRiver.app, and runs the tests
 data/       the synthetic sample, and your own export if you make one (ignored by git)
 scripts/    gen_synthetic.py (fake library), export_photos.py (optional Apple Photos → JSON)
+tests/      the exporter's Python tests (the app's are in mac/Tests/)
 docs/       PRD and data format
 ```
 

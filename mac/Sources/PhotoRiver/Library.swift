@@ -55,15 +55,25 @@ final class Library {
 
     // ---------- sources ----------
 
-    /// Every image in the Photos library, oldest first. Photos dated exactly 1980-01-01 00:00 are skipped:
-    /// that is the placeholder date for images with no capture time (screenshots, downloaded PNGs).
-    static func fromPhotos(progress: @escaping (Int, Int) -> Void) -> Library {
+    /// What the river asks PhotoKit for: images only, oldest first, and never photos you hid in Photos.
+    static func fetchOptions() -> PHFetchOptions {
         let opts = PHFetchOptions()
         opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         opts.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-        let result = PHAsset.fetchAssets(with: opts)
+        // PhotoKit already defaults to false; spelled out so hidden photos can't appear by accident.
+        opts.includeHiddenAssets = false
+        return opts
+    }
+
+    /// 1980-01-01 00:00 local time: the date Photos gives images with no capture time.
+    static let placeholderDate = DateComponents(calendar: .current, year: 1980, month: 1, day: 1).date!.timeIntervalSince1970
+
+    /// Every image in the Photos library, oldest first, except hidden ones and those on the placeholder date
+    /// (screenshots, downloaded PNGs).
+    static func fromPhotos(progress: @escaping (Int, Int) -> Void) -> Library {
+        let result = PHAsset.fetchAssets(with: fetchOptions())
         let total = result.count
-        let placeholder = DateComponents(calendar: .current, year: 1980, month: 1, day: 1).date!.timeIntervalSince1970
+        let placeholder = placeholderDate
 
         var rows: [(t: Double, lat: Double?, lng: Double?, portrait: Bool, asset: PHAsset)] = []
         rows.reserveCapacity(total)

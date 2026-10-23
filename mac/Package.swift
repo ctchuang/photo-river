@@ -7,5 +7,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(name: "PhotoRiver", path: "Sources/PhotoRiver"),
+        // Swift Testing ships with the Command Line Tools; run with `make test`.
+        .testTarget(name: "PhotoRiverTests", dependencies: ["PhotoRiver"], path: "Tests/PhotoRiverTests"),
     ]
 )
