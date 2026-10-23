@@ -27,9 +27,8 @@ Every view reads one file, `data/photos.json`, written by `scripts/export_photos
 
 ## Rules the pages rely on
 
-- `t` is sorted ascending. Everything (the river coordinate, year and month boundaries, flight inference) is a binary search over `t`.
+- `t` is sorted ascending. Everything (the river coordinate, year and month boundaries) is a binary search over `t`.
 - `lat`/`lng` may be `null`; such photos count in totals but never place anything on the map.
-- Flights are not in the file. Photo Globe infers them: two consecutive geotagged photos more than 400 km apart form one flight, timestamped at the second photo.
 - "Home" is not in the file either. Time River takes the most common 1° cell per year as that year's home, and marks photos more than 150 km from it as "away". The synthetic generator uses the same rule in reverse to decide which placeholder scene to paint.
 - Thumbnails are optional. When `meta.thumbs` is present, Time River replaces `{i}` with the photo index and loads the image lazily as the card enters the view; otherwise it paints a procedural placeholder.
 

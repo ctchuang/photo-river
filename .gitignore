@@ -1,7 +1,6 @@
 # Your real photo library export stays on your machine. Only the synthetic sample is committed.
 data/photos.json
 data/thumbs/
-data/raw_countries.geojson
 
 # OS / editor noise
 .DS_Store

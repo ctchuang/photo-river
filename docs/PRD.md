@@ -6,7 +6,7 @@ Status: draft v0.1, 2026-10-23. Owner: Justin Chuang. This document collects the
 
 Photo River is a set of local-first, cinematic visualizations of one person's photo library: twenty years and roughly twenty thousand photos from Apple Photos. It treats the library as the richest "event log" most people own (every photo has a time, most have a place, many have people and scene labels) and renders it as something you can fly through, not a report you read.
 
-Two views exist in v0: **Time River**, a slowly flowing river of photo cards with constant photo density, and **Photo Globe**, a globe that grows photo piles and replays inferred flights. A small exporter turns the Photos library into a single JSON file. Nothing leaves the Mac.
+One view exists in v0: **Time River**, a slowly flowing river of photo cards with constant photo density. A small exporter turns the Photos library into a single JSON file. Nothing leaves the Mac.
 
 ## 2. Background and motivation
 
@@ -61,22 +61,11 @@ A river of photo cards flows from oldest (left) to newest (right) under a starfi
 - **HUD.** Large year, date and time of the photo at the center of the view, running count, and a synthetic badge when applicable.
 - **Look.** PS5-inspired: deep navy gradient, thin geometric type (Outfit), frosted-glass pills and bars, white highlight for the active state, generous spacing.
 
-### 7.2 Photo Globe (`web/photo-globe.html`)
-
-A hand-built three.js globe (dotted land, country outlines, graticule, atmosphere rim).
-
-- **Photo piles.** One hexagonal prism per 0.5° cell; height is log-scaled count, color brightens with count.
-- **Flights.** Inferred, not imported: consecutive geotagged photos more than 400 km apart form a great-circle arc, drawn as a tube with an animated head and a small marker when the flight "happens".
-- **Clock.** Twenty years play in two minutes at 1×; the sun's position (day/night terminator) follows the simulated time.
-- **Photo river strip.** Weekly photo counts as an area chart with a playhead; click or drag to scrub.
-- **Telemetry.** Counters (photos, flights and km, cells visited, percent of the Earth's surface "seen") and a flight-computer log with timestamps and coordinates.
-- **Camera.** Drag to rotate, wheel/pinch to zoom, optional follow mode that turns the globe toward each new destination.
-
-### 7.3 Exporter (`scripts/export_photos.py`)
+### 7.2 Exporter (`scripts/export_photos.py`)
 
 Reads the Photos library through [osxphotos](https://github.com/RhetTbull/osxphotos) and writes column arrays: `t`, `lat`, `lng`, `hour`, plus `persons`, `labels`, `score`, `camera` with `--full`. Videos are excluded unless `--movies`. Output goes to `data/photos.json`, which is git-ignored.
 
-### 7.4 Synthetic sample (`scripts/gen_synthetic.py`)
+### 7.3 Synthetic sample (`scripts/gen_synthetic.py`)
 
 A plausible fake life for development: 2006–2026, two homes (Taipei, then the Bay Area, then Taipei), 61 trips, weekend and holiday rhythms, a baby in 2016, a lockdown dip in 2020, phone cameras improving over time. 20,613 photos, 128 inferred flights. Committed as `data/sample/photos.json`.
 
@@ -109,8 +98,8 @@ Ordered roughly by how soon they are worth doing. Items marked **(agreed)** came
 ## 10. Technical architecture
 
 - **Pages**: plain HTML files in `web/`, three.js r128 UMD from cdnjs, Outfit from Google Fonts, everything else inline. No bundler, no framework. Each page is one IIFE with clear sections (helpers, state, load, build, update, input, loop).
-- **Data**: `data/photos.json` column arrays (see `DATA.md`), loaded with a fallback to `data/sample/photos.json`. Flights, homes and away/near-home flags are derived in the browser.
-- **Performance budget**: 20k–50k photos; 60 fps on an Apple-silicon laptop. Time River keeps a pool of 170 card meshes and paints or loads textures only as cards enter the view. Photo Globe recomputes cell counts with one pass over the visible prefix at ≤12 Hz and reuses one InstancedMesh.
+- **Data**: `data/photos.json` column arrays (see `DATA.md`), loaded with a fallback to `data/sample/photos.json`. Homes and away/near-home flags are derived in the browser.
+- **Performance budget**: 20k–50k photos; 60 fps on an Apple-silicon laptop. Time River keeps a pool of 170 card meshes and paints or loads textures only as cards enter the view.
 - **Exporter**: Python 3 + osxphotos, installed through Homebrew → pipx. Reads only; writes one JSON.
 - **Verification**: a local Playwright screenshot script (desktop and phone widths, console-error capture) was used during development; it is not part of the repository's runtime.
 
@@ -130,7 +119,7 @@ Ordered roughly by how soon they are worth doing. Items marked **(agreed)** came
 ## 13. Open questions
 
 - Month and year boundaries use the viewer's local time zone; photos taken abroad are grouped by the viewer's zone, not the photo's. Should the exporter emit a per-photo zone offset?
-- How to handle photos without GPS (older cameras, screenshots)? They are counted but invisible on the globe; the river shows them without a location line.
+- How to handle photos without GPS (older cameras, screenshots)? They are counted but cannot be placed on a map; the river shows them without a location line.
 - Thumbnail size and format: 320 px JPEG at quality 70 is the working assumption; HEIC sources need conversion in the exporter.
 - Multiple libraries, shared libraries, and videos (currently excluded by default).
 - Whether to compute "home" per year (current) or detect moves explicitly.

@@ -4,12 +4,11 @@ A slow river of your photos.
 
 Photo River turns twenty years of an Apple Photos library into cinematic, local-first visualizations. Nothing is uploaded: a small script reads the metadata that Photos already keeps on your Mac (time, GPS, people, scene labels, aesthetic scores) and a few static web pages render it.
 
-Two views exist today:
+One view exists today:
 
 - **Time River** (`web/time-river.html`): photo cards drift under a starfield, oldest to newest, with constant photo density. The river's coordinate is the photo index, not the clock, so a trip with 400 photos in three days flows slowly and an empty winter month passes in a blink. Scroll to zoom, drag to scrub, click a card to enlarge it, and pull out the timeline at the bottom to jump to a year or month.
-- **Photo Globe** (`web/photo-globe.html`): a globe grows photo piles where you were, infers flights from big jumps between consecutive photos, and plays twenty years in two minutes with a day/night terminator, a photo-density river and a flight-computer log.
 
-Both pages ship with a synthetic sample library (`data/sample/photos.json`, 20,613 fake photos over 2006–2026) so you can see them work before exporting your own.
+The page ships with a synthetic sample library (`data/sample/photos.json`, 20,613 fake photos over 2006–2026) so you can see it work before exporting your own.
 
 The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](docs/PRD.md). The data format is in [docs/DATA.md](docs/DATA.md).
 
@@ -52,7 +51,7 @@ The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000/web/time-river.html> or <http://localhost:8000/web/photo-globe.html>. The pages load `data/photos.json` if it exists and fall back to `data/sample/photos.json`.
+Then open <http://localhost:8000/web/time-river.html>. The page loads `data/photos.json` if it exists and fall back to `data/sample/photos.json`.
 
 ## Export your own library
 
@@ -76,8 +75,8 @@ Time River can show real thumbnails instead of generated placeholders. Set `meta
 
 ```
 web/        the visualizations (plain HTML + three.js from a CDN, no build step)
-data/       land outlines, the synthetic sample, and your own export (ignored by git)
-scripts/    export_photos.py (Apple Photos → JSON), gen_synthetic.py (fake library), land_prep.py (globe geometry)
+data/       the synthetic sample and your own export (ignored by git)
+scripts/    export_photos.py (Apple Photos → JSON), gen_synthetic.py (fake library)
 docs/       PRD and data format
 ```
 
