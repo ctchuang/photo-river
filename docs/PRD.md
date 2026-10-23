@@ -19,14 +19,14 @@ Decisions made in the conversation:
 - **Not Google Takeout.** The owner does not want to route personal data through a cloud export. Apple Photos on a Mac is the source.
 - **Not an "artsy" infographic.** Heatmaps, stream graphs, quiet poster-style charts were considered and rejected. The target register is kinetic and cinematic: Flightradar, NASA visualizations, a PS5 home screen.
 - **Constant density, variable time.** When a trip produces 400 photos in three days and a winter month produces none, a clock-driven animation either floods or starves. The river coordinate is the photo index; time slows where photos are dense.
-- **Local-first.** Static pages, a single JSON, no server, no accounts, no upload.
+- **Local-first.** A native Mac app that reads the Photos library in place: no server, no accounts, no upload.
 
 ## 3. Goals
 
 1. Make twenty years of photos *feel* like twenty years: rhythm, trips, eras, the people who came and went.
 2. Be beautiful enough to leave running on a screen, and responsive enough to explore by hand (scroll, drag, click, jump).
 3. Keep every byte of personal data on the user's machine.
-4. Keep the stack trivial: HTML + three.js from a CDN, one Python exporter, no build step, so the owner can iterate in an editor or with Claude Code.
+4. Keep the stack small: one Swift package built with the Command Line Tools (no Xcode project), so the owner can iterate in an editor or with Claude Code.
 5. Define a small data contract so other sources (another photo app, a folder of EXIF files) can feed the same views.
 
 ## 4. Non-goals (for now)
@@ -45,25 +45,26 @@ One user: the owner of the library. A secondary audience is anyone the owner sho
 - **Cinematic, not decorative.** Motion must carry information (time passing, a flight, a dense month). Effects that do not encode anything are kept subtle (stars, dust, reflections).
 - **Deadpan telemetry over sentiment.** Counters, coordinates and flight logs say more than captions. If narration is added, it speaks like a flight computer.
 - **The data contract comes first.** Views never read the Photos database; they read `data/photos.json` (see `DATA.md`). The exporter is the only code that touches the library.
-- **Honest placeholders.** When real thumbnails are absent, cards are painted procedurally and the page says so. Synthetic data is always labeled.
+- **Honest placeholders.** When real thumbnails are absent, cards are painted procedurally and the app says so. Synthetic data is always labeled.
 
 ## 7. Current scope (v0)
 
-### 7.1 Time River (`web/time-river.html`)
+### 7.1 Time River (`mac/`, a native macOS app)
 
 A river of photo cards flows from oldest (left) to newest (right) under a starfield, above a dark reflective water surface.
 
 - **River coordinate = photo index.** Each photo occupies the same length of river (`S` units), so density is constant by construction. Flow speed is in river units per second; three presets (slow, medium, fast).
 - **Cards.** 3D planes with rounded corners, a slight random tilt on all three axes and a slow sway (the "floating" projective/affine feel), laid on five lanes at varying depth for parallax. A faded reflection sits below the water line.
-- **Placeholders.** Without thumbnails, each card is painted on a canvas from one of eight scene families (sky, sea, city, street, food, people, green, night) with film grain and a vignette. Photos taken away from that year's home prefer travel scenes.
-- **Interaction.** Mouse wheel / pinch zooms the camera; horizontal drag scrubs the river; hovering a card lifts it and shows date, coordinates, away/near-home and index; clicking a card enlarges it in front of the river and dims the rest; Space toggles flow; ←/→ jump a month.
-- **Timeline.** A glass bar at the bottom shows the years, each as wide as its photo count. Hovering pulls out a second row with the twelve months of the hovered year. Clicking a year or month animates the river to that point. On phones the rows become equal-width and scrollable; the playhead follows the cells either way.
+- **Photos.** Cards show the previews Photos already keeps (PhotoKit, never downloaded for a card), cover-cropped, with each photo's real orientation.
+- **Placeholders.** For the synthetic sample, or a photo with no local preview, each card is painted procedurally from one of eight scene families (sky, sea, city, street, food, people, green, night) with film grain and a vignette. Photos taken away from that year's home prefer travel scenes.
+- **Interaction.** Mouse wheel / pinch zooms the camera; horizontal drag scrubs the river; hovering a card lifts it and shows date, coordinates, away/near-home and index; clicking a card stops the river and opens the full image over it (downloaded from iCloud with a progress bar if the original is not on the Mac), where ←/→ step to the previous or next photo and a click or Esc closes it; horizontal two-finger scroll also scrubs; Space toggles flow; ←/→ jump a month.
+- **Timeline.** A glass bar at the bottom shows the years, each as wide as its photo count. Hovering pulls out a second row with the twelve months of the hovered year. Clicking a year or month animates the river to that point. A playhead follows the cells.
 - **HUD.** Large year, date and time of the photo at the center of the view, running count, and a synthetic badge when applicable.
-- **Look.** PS5-inspired: deep navy gradient, thin geometric type (Outfit), frosted-glass pills and bars, white highlight for the active state, generous spacing.
+- **Look.** PS5-inspired: deep navy gradient, thin system type (SF Pro, ultralight for the year), frosted-glass pills and bars, white highlight for the active state, generous spacing.
 
 ### 7.2 Exporter (`scripts/export_photos.py`)
 
-Reads the Photos library through [osxphotos](https://github.com/RhetTbull/osxphotos) and writes column arrays: `t`, `lat`, `lng`, `hour`, plus `persons`, `labels`, `score`, `camera` with `--full`. Videos are excluded unless `--movies`. Output goes to `data/photos.json`, which is git-ignored.
+Optional; the app no longer needs it. Reads the Photos library through [osxphotos](https://github.com/RhetTbull/osxphotos) and writes column arrays: `t`, `lat`, `lng`, `hour`, plus `persons`, `labels`, `score`, `camera` with `--full`. Videos are excluded unless `--movies`. Output goes to `data/photos.json`, which is git-ignored.
 
 ### 7.3 Synthetic sample (`scripts/gen_synthetic.py`)
 
@@ -73,7 +74,7 @@ A plausible fake life for development: 2006–2026, two homes (Taipei, then the 
 
 Ordered roughly by how soon they are worth doing. Items marked **(agreed)** came up as next steps in the conversation; the rest are candidates.
 
-1. **Thumbnail export (agreed).** `scripts/export_thumbs.py` writing ~320 px JPEGs to `data/thumbs/{i}.jpg` and setting `meta.thumbs`. Time River already loads them lazily. Expect 100–200 MB for 20k photos; this is why the real-data version runs locally rather than as a hosted page.
+1. **Real thumbnails and full images (done).** The native app reads previews and originals through PhotoKit, so no thumbnail export is needed.
 2. **River pacing and card density (agreed).** Tune `S`, lane spacing, depth range and card scale against real thumbnails; consider aesthetic score for size.
 3. **Fog-of-war opening.** The globe starts fully fogged; each photo clears a few kilometers around it; twenty years of time-lapse reveals the map, with a counter for the fraction of the Earth revealed. Good as a 30-second opening shot.
 4. **People as an orrery.** Home is the sun; each named person is a planet whose orbital period is their real recurrence interval (someone seen every six months has a six-month orbit; a once-in-five-years friend is a comet). Watch orbits change as children are born, friends move away, relationships end. Needs `--full` export.
@@ -91,28 +92,27 @@ Ordered roughly by how soon they are worth doing. Items marked **(agreed)** came
 ## 9. Design direction
 
 - Palette: deep navy to near-black gradient, white type, light-blue accent glow, frosted glass panels (`rgba(255,255,255,0.06)` with a 1 px edge), 14–18 px radii.
-- Type: Outfit (200–500) for Latin and numbers; system CJK fallbacks. Large, thin, generous tracking.
-- Motion: ease-in-out jumps, exponential smoothing for camera and zoom, nothing bounces. Respect `prefers-reduced-motion` by removing sway and twinkle.
+- Type: SF Pro, ultralight to regular, tabular numbers. Large, thin, generous tracking.
+- Motion: ease-in-out jumps, exponential smoothing for camera and zoom, nothing bounces. Respect the system Reduce Motion setting by removing sway and twinkle.
 - Reference: PS5 home screen and media gallery. Anti-reference: quiet editorial infographics, pastel dashboards, emoji.
 
 ## 10. Technical architecture
 
-- **Pages**: plain HTML files in `web/`, three.js r128 UMD from cdnjs, Outfit from Google Fonts, everything else inline. No bundler, no framework. Each page is one IIFE with clear sections (helpers, state, load, build, update, input, loop).
-- **Data**: `data/photos.json` column arrays (see `DATA.md`), loaded with a fallback to `data/sample/photos.json`. Homes and away/near-home flags are derived in the browser.
-- **Performance budget**: 20k–50k photos; 60 fps on an Apple-silicon laptop. Time River keeps a pool of 170 card meshes and paints or loads textures only as cards enter the view.
+- **App**: a SwiftPM executable in `mac/` (Swift, macOS 14+), packaged into `build/PhotoRiver.app` by `make app` with an ad-hoc signature. Metal draws the river (shaders compiled at launch from source, since the Command Line Tools have no `metal` compiler); SwiftUI draws the glass overlay. `@State` is avoided because its macro plugin ships only with Xcode.
+- **Data**: PhotoKit, read in place: every image with its date, location and orientation, oldest first. `--sample` loads the bundled `data/sample/photos.json` instead (see `DATA.md`). Homes and away/near-home flags are derived in the app.
+- **Performance budget**: 20k–50k photos; 60–120 fps on an Apple-silicon laptop. Time River keeps a pool of 170 cards and paints or loads textures off the main thread only as cards enter the view.
 - **Exporter**: Python 3 + osxphotos, in a project `.venv/` managed by uv (`pyproject.toml` + `uv.lock`). Reads only; writes one JSON, and with `--thumbs` a folder of JPEG thumbnails.
-- **Verification**: a local Playwright screenshot script (desktop and phone widths, console-error capture) was used during development; it is not part of the repository's runtime.
 
 ## 11. Privacy and data handling
 
-- The only process that reads the Photos library is `export_photos.py`, and it reads metadata only.
+- The app reads the Photos library through PhotoKit, read-only, after the user grants access. The optional `export_photos.py` also only reads.
 - `data/photos.json` and `data/thumbs/` are git-ignored. Only the synthetic sample is committed.
-- Pages make no network requests other than loading three.js and the web font from public CDNs. They can be run fully offline by vendoring those two files.
+- The app makes no network requests of its own; the only downloads are originals PhotoKit fetches from the owner's iCloud when a photo is opened.
 - `--full` exports people's names and scene labels. Treat that file as personal.
 
 ## 12. Success criteria
 
-- v0: both pages load the sample and a real export without errors in Safari and Chrome; the owner recognizes trips, moves and rhythms without any labels telling them.
+- v0: the app runs on the sample and on a real library without errors; the owner recognizes trips, moves and rhythms without any labels telling them.
 - v1: real thumbnails in the river, and the owner is willing to leave it running on a TV for an evening.
 - Later: at least one agent-driven view (Jarvis mode) that reconfigures the visualization from a single sentence.
 

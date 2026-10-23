@@ -1,6 +1,6 @@
 # Data format
 
-Every view reads one file, `data/photos.json`, written by `scripts/export_photos.py` (or `scripts/gen_synthetic.py` for the sample). It is a set of parallel column arrays: index `i` in every array is the same photo. Columns keep the file small (about 25 bytes per photo) and let the pages build typed arrays without copying.
+The Mac app reads your library directly through PhotoKit and needs no file. This JSON format is what the synthetic sample (`data/sample/photos.json`, written by `scripts/gen_synthetic.py`) uses, and what the optional `scripts/export_photos.py` writes. It is a set of parallel column arrays: index `i` in every array is the same photo. Columns keep the file small (about 25 bytes per photo).
 
 ```json
 {
@@ -28,14 +28,14 @@ Every view reads one file, `data/photos.json`, written by `scripts/export_photos
 }
 ```
 
-## Rules the pages rely on
+## Rules the app relies on
 
 - `t` is sorted ascending. Everything (the river coordinate, year and month boundaries) is a binary search over `t`.
 - `lat`/`lng` may be `null`; such photos count in totals but never place anything on the map.
 - "Home" is not in the file either. Time River takes the most common 1° cell per year as that year's home, and marks photos more than 150 km from it as "away". The synthetic generator uses the same rule in reverse to decide which placeholder scene to paint.
-- Thumbnails are optional. When `meta.thumbs` is present, Time River replaces `{i}` with the photo index and `{id}` with `id[i]`, loads the image lazily as the card enters the view and cover-crops it to the card; a missing thumbnail, or no `meta.thumbs` at all, gets a procedural placeholder.
-- `export_photos.py` drops photos dated exactly 1980-01-01 00:00, the placeholder Photos gives images with no capture time.
+- The app does not read `meta.thumbs` or `id`: cards from a JSON file are always procedural placeholders. Real previews come from PhotoKit.
+- Both the app and `export_photos.py` drop photos dated exactly 1980-01-01 00:00, the placeholder Photos gives images with no capture time.
 
 ## Why not the Photos database directly
 
-The pages are static files; they cannot open `Photos.sqlite`. The exporter is the only code that touches the library, and it only reads. Keeping the contract this small also means any other source (another photo manager, a folder of EXIF-tagged files) can feed the same views by writing the same JSON.
+The app uses PhotoKit, Apple's supported API, rather than reading `Photos.sqlite`; the exporter reads the database through osxphotos. Keeping the contract this small also means any other source (another photo manager, a folder of EXIF-tagged files) can feed the same views by writing the same JSON.

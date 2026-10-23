@@ -13,9 +13,9 @@ __pycache__/
 *.pyc
 .venv/
 
-# Node (only used for local screenshot checks)
-node_modules/
-test/*.png
+# macOS app build output
+build/
+mac/.build/
 
 # Claude Code: worktrees and personal settings
 .claude/worktrees/

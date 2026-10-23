@@ -2,105 +2,65 @@
 
 A slow river of your photos.
 
-Photo River turns twenty years of an Apple Photos library into cinematic, local-first visualizations. Nothing is uploaded: a small script reads the metadata that Photos already keeps on your Mac (time, GPS, people, scene labels, aesthetic scores) and a few static web pages render it.
+Photo River turns twenty years of an Apple Photos library into a cinematic, local-first Mac app. Nothing is uploaded: the app reads your library in place through Apple's PhotoKit (dates, locations, the previews Photos already keeps) and draws it with Metal.
 
 One view exists today:
 
-- **Time River** (`web/time-river.html`): photo cards drift under a starfield, oldest to newest, with constant photo density. The river's coordinate is the photo index, not the clock, so a trip with 400 photos in three days flows slowly and an empty winter month passes in a blink. Scroll to zoom, drag to scrub, click a card to enlarge it, and pull out the timeline at the bottom to jump to a year or month.
+- **Time River**: photo cards drift under a starfield, oldest to newest, with constant photo density. The river's coordinate is the photo index, not the clock, so a trip with 400 photos in three days flows slowly and an empty winter month passes in a blink. Scroll to zoom, drag (or two-finger swipe) to scrub, pull out the timeline at the bottom to jump to a year or month, and click a card: the river stops and the full image opens. ←/→ step through neighbouring photos; click or Esc returns to the river.
 
-The page ships with a synthetic sample library (`data/sample/photos.json`, 20,613 fake photos over 2006–2026) so you can see it work before exporting your own.
+The app also ships with a synthetic sample library (`data/sample/photos.json`, 20,613 fake photos over 2006–2026) so you can see it work without your own photos.
 
-The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](docs/PRD.md). The data format is in [docs/DATA.md](docs/DATA.md).
+The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](docs/PRD.md). The sample's data format is in [docs/DATA.md](docs/DATA.md).
 
 ## Requirements
 
-- macOS with the Photos app (the exporter reads the local Photos library database).
-- [Homebrew](https://brew.sh), used to install [uv](https://docs.astral.sh/uv/).
-- A modern browser with WebGL (Safari, Chrome, Firefox, Edge).
+- macOS 14 or later with the Photos app.
+- Apple's Command Line Tools (Swift and the macOS SDK). Xcode is not needed:
 
-## Setup
+  ```sh
+  xcode-select --install
+  ```
 
-1. Install Homebrew if you do not have it yet:
-
-   ```sh
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-
-2. Install [uv](https://docs.astral.sh/uv/) with Homebrew. uv manages the Python environment for the exporter; nothing is installed globally:
-
-   ```sh
-   brew install uv
-   ```
-
-3. Give your terminal Full Disk Access, otherwise macOS will not let the exporter open the Photos database: System Settings → Privacy & Security → Full Disk Access → add Terminal (or iTerm, or whatever you use).
-
-4. Clone this repository:
-
-   ```sh
-   git clone https://github.com/ctchuang/photo-river.git
-   cd photo-river
-   ```
-
-5. Create the project's virtual environment. `uv sync` reads `pyproject.toml` and `uv.lock`, downloads a matching Python if needed, and installs [osxphotos](https://github.com/RhetTbull/osxphotos) (the open-source library that reads the Photos database) into `.venv/` inside the repository:
-
-   ```sh
-   uv sync
-   ```
-
-   To remove everything later, delete the `.venv/` folder.
-
-## Try it with the sample data
+## Build and run
 
 ```sh
-python3 -m http.server 8000
+git clone https://github.com/ctchuang/photo-river.git
+cd photo-river
+make run        # build build/PhotoRiver.app and open it on your Photos library
+make sample     # the same app on the synthetic sample
 ```
 
-Then open <http://localhost:8000/web/time-river.html>. The page loads `data/photos.json` if it exists and falls back to `data/sample/photos.json`.
+The first time, macOS asks for access to your photos. If you decline, the app falls back to the synthetic sample; you can grant access later in System Settings → Privacy & Security → Photos.
 
-## Export your own library
+`make app` only builds. The app is signed ad hoc, so after a rebuild macOS may ask for photo access again.
 
-Run the exporter inside the project's `.venv/` with `uv run`:
+Cards use the small previews Photos already keeps; nothing is downloaded for them. Opening a photo whose original lives only in iCloud downloads it, with a progress bar.
+
+## Optional: JSON exporter
+
+`scripts/export_photos.py` writes the library's metadata (and with `--full`, people, scene labels, aesthetic scores and camera models) to `data/photos.json` in the format of [docs/DATA.md](docs/DATA.md), for analysis or future views. The app does not need it. It runs in a uv-managed venv and needs Full Disk Access for your terminal:
 
 ```sh
-uv run scripts/export_photos.py --full --movies --thumbs > data/photos.json
+brew install uv
+uv sync
+uv run scripts/export_photos.py --full > data/photos.json
 ```
 
-The flags are optional. Without any, the export is minimal: timestamps
-and GPS only, and the cards are painted placeholders. Add `--full` to
-also export people, scene labels, Apple's aesthetic score and the
-camera model (used by future views), `--movies` to include videos, and
-`--thumbs` to show your real photos (see below).
-
-The exporter uses your System Photo Library; to read a different one,
-add `--library ~/Pictures/"Other Library.photoslibrary"`. The output
-is a single JSON file that stays in `data/`.
-
-Reload the page. The synthetic badge disappears and the river is
-yours.
-
-### Thumbnails
-
-`--thumbs` also writes one small JPEG per photo to `data/thumbs/` (384
-px on the long edge, about 30 KB each, so roughly 650 MB for 20,000
-photos), made with macOS `sips` from the previews Photos already
-keeps, so edits and rotation are applied and iCloud originals are not
-downloaded. Thumbnails are named by the photo's Photos ID: re-running
-only makes the ones that are new, and removes the ones for photos that
-are gone. Both `data/photos.json` and `data/thumbs/` are ignored by
-git.
+See the docstring at the top of the script for all flags (`--movies`, `--thumbs`, `--library`).
 
 ## Repository layout
 
 ```
-web/        the visualizations (plain HTML + three.js from a CDN, no build step)
-data/       the synthetic sample and your own export (ignored by git)
-scripts/    export_photos.py (Apple Photos → JSON), gen_synthetic.py (fake library)
+mac/        the app: a Swift package (Metal river, SwiftUI overlay, PhotoKit) and its Info.plist
+Makefile    builds and packages mac/ into build/PhotoRiver.app
+data/       the synthetic sample, and your own export if you make one (ignored by git)
+scripts/    gen_synthetic.py (fake library), export_photos.py (optional Apple Photos → JSON)
 docs/       PRD and data format
 ```
 
 ## Privacy
 
-`export_photos.py` only reads the Photos library. It writes one JSON file into `data/`, plus thumbnails into `data/thumbs/` when you pass `--thumbs`; `.gitignore` keeps both out of the repository. Nothing is sent anywhere. The pages are static files served from your own machine; the only network requests are for the three.js library and a web font from public CDNs.
+The app reads your Photos library read-only and makes no network requests of its own; the only downloads are originals that PhotoKit fetches from your own iCloud when you open a photo. The optional exporter writes `data/photos.json` and `data/thumbs/`, which `.gitignore` keeps out of the repository.
 
 ## License
 
