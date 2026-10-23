@@ -1,5 +1,7 @@
 # Photo River
 
+[![Tests](https://github.com/ctchuang/photo-river/actions/workflows/tests.yml/badge.svg)](https://github.com/ctchuang/photo-river/actions/workflows/tests.yml)
+
 A slow river of your photos.
 
 ![Time River: photo cards from a 2010 trip to Rome drift above the water, with the year and month timeline along the bottom](docs/images/time-river.jpg)

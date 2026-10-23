@@ -1,0 +1,29 @@
+# Runs `make test` (the app's Swift tests and the exporter's Python tests) on every push to
+# main and every pull request. macOS runners are needed for PhotoKit and the Swift toolchain.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcode-select -p
+          swift --version
+
+      - name: make test
+        run: make test
