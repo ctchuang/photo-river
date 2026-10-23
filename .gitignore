@@ -16,3 +16,7 @@ __pycache__/
 # Node (only used for local screenshot checks)
 node_modules/
 test/*.png
+
+# Claude Code: worktrees and personal settings
+.claude/worktrees/
+.claude/settings.local.json
