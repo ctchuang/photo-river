@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Export Apple Photos metadata (no images) to photos.json for the Photo River pages.
+
+Everything runs on your Mac; nothing is uploaded. The output is a single JSON file
+with timestamps and GPS, plus (with --full) people, scene labels, Apple's aesthetic
+score and camera model for later visualizations.
+
+Setup (once):
+    python3 -m pip install --user osxphotos
+    # or: brew install pipx && pipx install osxphotos
+
+Run (Terminal needs Full Disk Access: System Settings > Privacy & Security > Full Disk Access):
+    python3 scripts/export_photos.py > data/photos.json            # minimal: time + GPS only
+    python3 scripts/export_photos.py --full > data/photos.json     # also people, labels, score, camera
+    python3 scripts/export_photos.py --movies > data/photos.json   # include videos too
+
+Output shape (column arrays, same index = same photo):
+    {"meta": {...}, "t": [unix seconds], "lat": [..|null], "lng": [..|null],
+     "hour": [local hour of day, 0-23.99],
+     "persons": [[names]], "labels": [[labels]], "score": [0-1|null], "camera": [str|null]}  (--full only)
+"""
+import sys, json, datetime as dt
+
+try:
+    import osxphotos
+except ImportError:
+    sys.stderr.write("osxphotos is not installed. Run: python3 -m pip install --user osxphotos\n")
+    sys.exit(1)
+
+full = "--full" in sys.argv
+movies = "--movies" in sys.argv
+
+db = osxphotos.PhotosDB()
+photos = db.photos(images=True, movies=movies, intrash=False)
+sys.stderr.write(f"library: {db.library_path}\nphotos: {len(photos)}\n")
+
+rows = []
+for p in photos:
+    if p.date is None:
+        continue
+    lat, lng = (None, None)
+    if p.location and p.location[0] is not None:
+        lat, lng = round(p.location[0], 4), round(p.location[1], 4)
+    local = p.date  # timezone-aware, in the photo's own zone
+    hour = round(local.hour + local.minute / 60.0, 2)
+    row = {"t": int(local.timestamp()), "lat": lat, "lng": lng, "hour": hour}
+    if full:
+        row["persons"] = [n for n in (p.persons or []) if n and n != "_UNKNOWN_"]
+        row["labels"] = list(p.labels or [])
+        row["score"] = round(p.score.overall, 3) if p.score and p.score.overall is not None else None
+        row["camera"] = p.exif_info.camera_model if p.exif_info else None
+    rows.append(row)
+
+rows.sort(key=lambda r: r["t"])
+
+out = {
+    "meta": {
+        "source": "apple-photos",
+        "exported": dt.date.today().isoformat(),
+        "count": len(rows),
+        "full": full,
+        "movies": movies,
+    },
+    "t": [r["t"] for r in rows],
+    "lat": [r["lat"] for r in rows],
+    "lng": [r["lng"] for r in rows],
+    "hour": [r["hour"] for r in rows],
+}
+if full:
+    out["persons"] = [r["persons"] for r in rows]
+    out["labels"] = [r["labels"] for r in rows]
+    out["score"] = [r["score"] for r in rows]
+    out["camera"] = [r["camera"] for r in rows]
+
+json.dump(out, sys.stdout, separators=(",", ":"), ensure_ascii=False)
+with_gps = sum(1 for r in rows if r["lat"] is not None)
+sys.stderr.write(f"exported: {len(rows)} photos, {with_gps} with GPS\n")

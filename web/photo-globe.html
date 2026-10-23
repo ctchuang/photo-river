@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Photo Globe</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one full-screen WebGL globe; telemetry pinned to the corners; the photo river pinned to the bottom edge.
+   A single dark mission-control theme by design (no light variant). */
+:root {
+  color-scheme: dark;
+  --bg: #070b15;
+  --panel: rgba(7, 11, 21, 0.72);
+  --fg: #dde5f2;
+  --muted: #7f8ca6;
+  --line: #1c2742;
+  --photo: #5fdcff;
+  --photo-deep: #1d5f7c;
+  --flight: #ffb648;
+  --now: #ff6a6a;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "PingFang TC", "Noto Sans TC", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", Roboto, sans-serif;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); overflow: hidden; }
+[hidden] { display: none !important; }
+#app { position: fixed; inset: 0; background: var(--bg); }
+#globe { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#globe.drag { cursor: grabbing; }
+
+.hud {
+  position: absolute; top: 0; left: 0;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  padding-left: var(--gutter-l);
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 13px; line-height: 1.6; pointer-events: none; white-space: nowrap;
+}
+.hud .date { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; margin-bottom: 6px; }
+.hud .row { display: flex; gap: 14px; }
+.hud .k { color: var(--muted); min-width: 4.5em; }
+.hud .v { color: var(--fg); }
+.hud .v.photo { color: var(--photo); }
+.hud .v.flight { color: var(--flight); }
+.badge {
+  display: inline-block; margin-top: 8px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 3px;
+  color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.badge.fake { color: var(--now); border-color: rgba(255, 106, 106, 0.45); }
+
+#controls {
+  position: absolute; top: 0; right: 0;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-right: var(--gutter-r);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  font-family: var(--mono); font-size: 12px;
+}
+.group { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px; backdrop-filter: blur(6px); }
+button, .toggle {
+  font: inherit; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 4px;
+  padding: 5px 10px; cursor: pointer; line-height: 1; min-height: 30px;
+}
+button:hover { border-color: var(--line); }
+button:focus-visible, .toggle:focus-within { outline: 2px solid var(--photo); outline-offset: 1px; }
+button.on { background: rgba(95, 220, 255, 0.14); color: var(--photo); border-color: rgba(95, 220, 255, 0.35); }
+button#play { min-width: 64px; font-weight: 600; }
+.toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.toggle input { accent-color: var(--photo); margin: 0; }
+
+#yearcard {
+  position: absolute; left: 0; right: 0; top: 18%; text-align: center; pointer-events: none;
+  font-family: var(--mono); font-weight: 600; font-size: clamp(56px, 12vw, 140px); letter-spacing: 0.04em;
+  color: var(--fg); opacity: 0; text-shadow: 0 0 40px rgba(95, 220, 255, 0.35);
+}
+#yearcard.show { animation: yearpop 2.6s ease-out forwards; }
+@keyframes yearpop {
+  0% { opacity: 0; transform: translateY(8px) scale(0.98); }
+  12% { opacity: 0.9; transform: translateY(0) scale(1); }
+  70% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-6px) scale(1.01); }
+}
+
+#log {
+  position: absolute; left: 0; bottom: 0;
+  padding-left: var(--gutter-l); padding-bottom: calc(128px + env(safe-area-inset-bottom, 0px));
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--muted);
+  pointer-events: none; white-space: pre; font-variant-numeric: tabular-nums;
+}
+#log .l { opacity: 0.55; }
+#log .l:last-child { opacity: 1; color: var(--fg); }
+#log .l.flight:last-child { color: var(--flight); }
+
+#strip {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding-left: var(--gutter-l); padding-right: var(--gutter-r);
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, rgba(7, 11, 21, 0.95), rgba(7, 11, 21, 0));
+}
+#river { display: block; width: 100%; height: 84px; cursor: col-resize; touch-action: none; }
+#strip .cap { font-family: var(--mono); font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 2px; }
+
+#loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 14px; color: var(--muted); background: var(--bg); z-index: 5;
+  padding-inline: var(--gutter-l) var(--gutter-r); text-align: center;
+}
+.hint { font-size: 11px; color: var(--muted); padding-right: 4px; }
+
+@media (max-width: 720px) {
+  .hud { font-size: 12px; }
+  .hud .row { gap: 10px; }
+  #log, .hint { display: none; }
+  #river { height: 64px; }
+  #yearcard { top: 24%; }
+  .group.speed { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #yearcard.show { animation-duration: 1.2s; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <canvas id="globe" aria-label="Photo Globe: where twenty years of photos were taken, and the flights between them"></canvas>
+
+  <div class="hud" id="hud">
+    <div class="date" id="hud-date">----------</div>
+    <div class="row"><span class="k">Photos</span><span class="v photo" id="hud-photos">0</span></div>
+    <div class="row"><span class="k">Flights</span><span class="v flight" id="hud-flights">0 flights · 0 km</span></div>
+    <div class="row"><span class="k">Places</span><span class="v" id="hud-cells">0 cells</span></div>
+    <div class="row"><span class="k">Earth seen</span><span class="v" id="hud-pct">0.000 %</span></div>
+    <div id="hud-badge" class="badge" hidden></div>
+  </div>
+
+  <div id="controls">
+    <div class="group">
+      <button id="play" type="button" aria-label="Play or pause">Play</button>
+      <button id="replay" type="button">Replay</button>
+    </div>
+    <div class="group speed" role="group" aria-label="Playback speed">
+      <button type="button" data-speed="0.5">0.5×</button>
+      <button type="button" data-speed="1" class="on">1×</button>
+      <button type="button" data-speed="2">2×</button>
+      <button type="button" data-speed="4">4×</button>
+    </div>
+    <div class="group">
+      <label class="toggle"><input type="checkbox" id="follow" checked> Follow camera</label>
+    </div>
+    <div class="hint">Drag to rotate · Scroll to zoom · Space to play/pause</div>
+  </div>
+
+  <div id="yearcard" aria-hidden="true"></div>
+  <div id="log" aria-live="off"></div>
+
+  <div id="strip">
+    <div class="cap"><span id="cap-left">Photo river · photos per week · click or drag to jump</span><span id="cap-right"></span></div>
+    <canvas id="river"></canvas>
+  </div>
+
+  <div id="loading">Loading photo data…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  async function loadJSON(paths) {
+    for (const p of paths) { try { const r = await fetch(p); if (r.ok) return await r.json(); } catch (e) { /* try the next path */ } }
+    throw new Error('no data file found (looked for ' + paths.join(', ') + ')');
+  }
+  const R = 100;                       // globe radius in scene units
+  const CELL = 0.5;                    // aggregation cell, degrees
+  const FLIGHT_KM = 400;               // consecutive photos farther apart than this = a flight
+  const YEARS_PER_SEC = 1 / 6;         // 1x: twenty years in two minutes
+  const SEC_PER_YEAR = 365.25 * 86400;
+  const FLY_MS = 1400;                 // real-time length of a flight animation
+  const EARTH_AREA = 510.1e6;          // km²
+  const EARTH_R = 6371;
+  const $ = (id) => document.getElementById(id);
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- helpers ----------
+  function latLngToVec(lat, lng, r, out) {
+    const phi = lat * Math.PI / 180, lam = lng * Math.PI / 180, c = Math.cos(phi);
+    out = out || new THREE.Vector3();
+    return out.set(r * c * Math.sin(lam), r * Math.sin(phi), r * c * Math.cos(lam));
+  }
+  function haversine(aLat, aLng, bLat, bLng) {
+    const p1 = aLat * Math.PI / 180, p2 = bLat * Math.PI / 180;
+    const dp = (bLat - aLat) * Math.PI / 180, dl = (bLng - aLng) * Math.PI / 180;
+    const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return 2 * EARTH_R * Math.asin(Math.sqrt(h));
+  }
+  function upperBound(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= x) lo = m + 1; else hi = m; } return lo; }
+  const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
+  const pad2 = (n) => (n < 10 ? '0' : '') + n;
+  function fmtDate(t) { const d = new Date(t * 1000); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function fmtTime(t) { const d = new Date(t * 1000); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function fmtCoord(lat, lng) { return Math.abs(lat).toFixed(1) + (lat >= 0 ? 'N' : 'S') + ' ' + Math.abs(lng).toFixed(1) + (lng >= 0 ? 'E' : 'W'); }
+  function cellArea(lat) { // km² of one CELL×CELL cell centred at lat
+    const p1 = (lat - CELL / 2) * Math.PI / 180, p2 = (lat + CELL / 2) * Math.PI / 180;
+    return EARTH_R * EARTH_R * (CELL * Math.PI / 180) * (Math.sin(p2) - Math.sin(p1));
+  }
+
+  // ---------- state ----------
+  const state = { simT: 0, t0: 0, t1: 0, playing: false, speed: 1, follow: true, ended: false, idx: 0, year: null, scrubbing: false };
+  let N = 0, T, LAT, LNG, GEO;
+  let flights = [], cells = [], cellOf, counts, cellTotal, maxTotal = 1, weekly = [], weekT0 = 0;
+  let scene, camera, renderer, group, sun, piles, ring, ringDot, plane, atmosphere;
+  const rot = { x: 0, y: 0 }, target = { x: 0, y: 0 };
+  let baseDist = 335, zoom = 1, zoomTarget = 1, dragging = false, autoSpin = !reduced, userTouched = false;
+  const logLines = [];
+
+  // ---------- load ----------
+  Promise.all([
+    loadJSON(['../data/photos.json', '../data/sample/photos.json']),
+    loadJSON(['../data/land.json']),
+  ]).then(([photos, land]) => { prepare(photos); build(land); start(); })
+    .catch((err) => { $('loading').textContent = 'Failed to load data: ' + err.message; });
+
+  // ---------- data prep ----------
+  function prepare(d) {
+    N = d.t.length;
+    T = Float64Array.from(d.t);
+    LAT = new Float64Array(N); LNG = new Float64Array(N); GEO = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      const la = d.lat[i], lo = d.lng[i];
+      if (la != null && lo != null) { LAT[i] = la; LNG[i] = lo; GEO[i] = 1; }
+    }
+    state.t0 = T[0]; state.t1 = T[N - 1]; state.simT = state.t0;
+
+    // flights: big jumps between consecutive geotagged photos
+    let prev = -1;
+    for (let i = 0; i < N; i++) {
+      if (!GEO[i]) continue;
+      if (prev >= 0) {
+        const km = haversine(LAT[prev], LNG[prev], LAT[i], LNG[i]);
+        if (km > FLIGHT_KM) flights.push({ t: T[i], i, aLat: LAT[prev], aLng: LNG[prev], bLat: LAT[i], bLng: LNG[i], km, shown: false, head: 0, startedAt: 0 });
+      }
+      prev = i;
+    }
+
+    // cells
+    const cols = Math.round(360 / CELL);
+    const index = new Map();
+    cellOf = new Int32Array(N).fill(-1);
+    for (let i = 0; i < N; i++) {
+      if (!GEO[i]) continue;
+      const r = Math.floor((LAT[i] + 90) / CELL), c = Math.floor((LNG[i] + 180) / CELL);
+      const key = r * cols + c;
+      let k = index.get(key);
+      if (k === undefined) {
+        k = cells.length; index.set(key, k);
+        const lat = r * CELL - 90 + CELL / 2, lng = c * CELL - 180 + CELL / 2;
+        cells.push({ lat, lng, area: cellArea(lat), total: 0 });
+      }
+      cellOf[i] = k; cells[k].total++;
+    }
+    counts = new Int32Array(cells.length);
+    cellTotal = cells.map((c) => c.total);
+    maxTotal = Math.max(1, ...cellTotal);
+
+    // weekly histogram for the river
+    weekT0 = state.t0;
+    const weeks = Math.ceil((state.t1 - state.t0) / 604800) + 1;
+    weekly = new Int32Array(weeks);
+    for (let i = 0; i < N; i++) weekly[Math.floor((T[i] - weekT0) / 604800)]++;
+
+    const badge = $('hud-badge');
+    if (d.meta && d.meta.source === 'synthetic') { badge.textContent = 'Synthetic data · not real photos'; badge.classList.add('fake'); badge.hidden = false; }
+    else if (d.meta && d.meta.source) { badge.textContent = d.meta.source; badge.hidden = false; }
+    $('cap-right').textContent = fmtDate(state.t0) + ' → ' + fmtDate(state.t1) + ' · ' + fmtInt(N) + ' photos';
+  }
+
+  // ---------- scene ----------
+  function build(land) {
+    const canvas = $('globe');
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x070b15, 1);
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(38, 1, 1, 3000);
+    camera.position.set(0, 0, baseDist);
+    group = new THREE.Group();
+    scene.add(group);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+    sun = new THREE.DirectionalLight(0xfff2dc, 0.95);
+    sun.position.set(0, 0, 500);
+    group.add(sun);
+
+    // globe body
+    group.add(new THREE.Mesh(
+      new THREE.SphereGeometry(R, 72, 72),
+      new THREE.MeshPhongMaterial({ color: 0x0f1a33, emissive: 0x050912, shininess: 6 })
+    ));
+
+    // atmosphere rim
+    atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(R * 1.035, 64, 64),
+      new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: new THREE.Color(0x2d6fb0) } },
+        vertexShader: 'varying vec3 vN; void main(){ vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform vec3 uColor; varying vec3 vN; void main(){ float i = pow(0.62 - dot(vN, vec3(0.0, 0.0, 1.0)), 2.4); gl_FragColor = vec4(uColor, 1.0) * i * 0.9; }',
+        side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+      })
+    );
+    scene.add(atmosphere);
+
+    // graticule
+    {
+      const pts = [];
+      const v = new THREE.Vector3();
+      for (let lat = -60; lat <= 60; lat += 30) {
+        for (let lng = -180; lng < 180; lng += 3) {
+          pts.push(latLngToVec(lat, lng, R + 0.15, v).clone(), latLngToVec(lat, lng + 3, R + 0.15, v).clone());
+        }
+      }
+      for (let lng = -180; lng < 180; lng += 30) {
+        for (let lat = -90; lat < 90; lat += 3) {
+          pts.push(latLngToVec(lat, lng, R + 0.15, v).clone(), latLngToVec(lat + 3, lng, R + 0.15, v).clone());
+        }
+      }
+      group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x16213a, transparent: true, opacity: 0.9 })));
+    }
+
+    // land: dots + outlines
+    {
+      const d = land.dots, pos = new Float32Array(d.length / 2 * 3);
+      const v = new THREE.Vector3();
+      for (let i = 0; i < d.length; i += 2) { latLngToVec(d[i], d[i + 1], R + 0.6, v); pos.set([v.x, v.y, v.z], i / 2 * 3); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      group.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x3b4a6b, size: 1.35, sizeAttenuation: true, transparent: true, opacity: 0.95 })));
+
+      const pts = [];
+      for (const line of land.lines) {
+        for (let i = 2; i < line.length; i += 2) {
+          pts.push(latLngToVec(line[i - 2], line[i - 1], R + 0.4, v).clone(), latLngToVec(line[i], line[i + 1], R + 0.4, v).clone());
+        }
+      }
+      group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x27345a, transparent: true, opacity: 0.8 })));
+    }
+
+    // photo piles: one hex prism per 0.5° cell
+    {
+      const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, false);
+      geo.translate(0, 0.5, 0); // base at y=0 so scaling y grows away from the surface
+      const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x0b2f3d, shininess: 40, transparent: true, opacity: 0.96 });
+      piles = new THREE.InstancedMesh(geo, mat, cells.length);
+      piles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const up = new THREE.Vector3(0, 1, 0), n = new THREE.Vector3(), q = new THREE.Quaternion(), m = new THREE.Matrix4(), s = new THREE.Vector3(), p = new THREE.Vector3();
+      const color = new THREE.Color();
+      for (let k = 0; k < cells.length; k++) {
+        const c = cells[k];
+        latLngToVec(c.lat, c.lng, 1, n);
+        q.setFromUnitVectors(up, n);
+        c.q = q.clone(); c.n = n.clone();
+        p.copy(n).multiplyScalar(R);
+        s.set(0.001, 0.001, 0.001);
+        m.compose(p, q, s);
+        piles.setMatrixAt(k, m);
+        piles.setColorAt(k, color.set(0x1d5f7c));
+      }
+      group.add(piles);
+    }
+
+    // flight arcs: tubes with a per-arc "head" uniform
+    {
+      const vert = 'varying float vT; void main(){ vT = uv.x; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+      const frag = 'uniform float uHead; uniform float uAlpha; uniform vec3 uColor; varying float vT;' +
+        'void main(){ if (vT > uHead) discard; float d = uHead - vT; float a = mix(0.42, 1.0, smoothstep(0.28, 0.0, d)); gl_FragColor = vec4(uColor, a * uAlpha); }';
+      const a = new THREE.Vector3(), b = new THREE.Vector3();
+      for (const f of flights) {
+        latLngToVec(f.aLat, f.aLng, 1, a); latLngToVec(f.bLat, f.bLng, 1, b);
+        const H = Math.min(11, Math.max(1.2, f.km / 900));
+        const pts = [];
+        const omega = Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
+        const so = Math.sin(omega) || 1e-6;
+        for (let i = 0; i <= 48; i++) {
+          const s = i / 48;
+          const w1 = Math.sin((1 - s) * omega) / so, w2 = Math.sin(s * omega) / so;
+          const v = new THREE.Vector3().addScaledVector(a, w1).addScaledVector(b, w2).normalize();
+          v.multiplyScalar(R + 0.5 + H * Math.sin(Math.PI * s));
+          pts.push(v);
+        }
+        const curve = new THREE.CatmullRomCurve3(pts);
+        const tube = new THREE.TubeGeometry(curve, 64, 0.24, 5, false);
+        const mat = new THREE.ShaderMaterial({
+          uniforms: { uHead: { value: 0 }, uAlpha: { value: 0 }, uColor: { value: new THREE.Color(0xffb648) } },
+          vertexShader: vert, fragmentShader: frag, transparent: true, depthWrite: false,
+        });
+        f.mesh = new THREE.Mesh(tube, mat);
+        f.mesh.visible = false;
+        f.curve = curve;
+        group.add(f.mesh);
+      }
+    }
+
+    // plane marker and "now" ring
+    plane = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffd58a }));
+    plane.visible = false; group.add(plane);
+    ring = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.5, 40), new THREE.MeshBasicMaterial({ color: 0x5fdcff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    ringDot = new THREE.Mesh(new THREE.CircleGeometry(0.45, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthWrite: false }));
+    ring.visible = false; ringDot.visible = false; group.add(ring); group.add(ringDot);
+
+    window.addEventListener('resize', resize);
+    resize();
+    bindInput(canvas);
+  }
+
+  function resize() {
+    const canvas = $('globe');
+    const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    baseDist = Math.max(335, 352 / camera.aspect);
+    drawRiver();
+  }
+
+  // ---------- time ----------
+  function applyTime(simT, hard) {
+    const idx = upperBound(T, simT);
+    state.idx = idx;
+
+    counts.fill(0);
+    for (let i = 0; i < idx; i++) { const k = cellOf[i]; if (k >= 0) counts[k]++; }
+
+    const m = new THREE.Matrix4(), s = new THREE.Vector3(), p = new THREE.Vector3(), color = new THREE.Color();
+    const deep = new THREE.Color(0x1d5f7c), bright = new THREE.Color(0x8ae8ff);
+    const lmax = Math.log(1 + maxTotal);
+    let visited = 0, area = 0;
+    for (let k = 0; k < cells.length; k++) {
+      const c = cells[k], n = counts[k];
+      if (n === 0) { s.set(0.001, 0.001, 0.001); p.copy(c.n).multiplyScalar(R); }
+      else {
+        visited++; area += c.area;
+        const f = Math.log(1 + n) / lmax;
+        const h = 0.6 + 8.5 * f;
+        s.set(0.72, h, 0.72); p.copy(c.n).multiplyScalar(R);
+        piles.setColorAt(k, color.copy(deep).lerp(bright, Math.min(1, f * 1.15)));
+      }
+      m.compose(p, c.q, s);
+      piles.setMatrixAt(k, m);
+    }
+    piles.instanceMatrix.needsUpdate = true;
+    if (piles.instanceColor) piles.instanceColor.needsUpdate = true;
+
+    // flights
+    const now = performance.now();
+    let km = 0, nf = 0, latest = null;
+    for (const f of flights) {
+      if (f.t <= simT) {
+        nf++; km += f.km;
+        if (!f.shown) { f.shown = true; f.startedAt = hard ? -1e9 : now; f.head = hard ? 1 : 0; f.mesh.visible = true; if (!hard) { latest = f; pushLog(flightLine(f), 'flight'); } }
+        const age = (simT - f.t) / SEC_PER_YEAR;
+        f.alpha = age < 1 ? 0.6 : age < 3 ? 0.34 : 0.17;
+      } else if (f.shown) { f.shown = false; f.mesh.visible = false; f.head = 0; }
+    }
+    if (hard) rebuildLog(simT);
+    if (latest && state.follow && !dragging) focus(latest.bLat, latest.bLng);
+
+    // "now" marker on the last geotagged photo
+    let last = -1;
+    for (let i = idx - 1; i >= Math.max(0, idx - 400); i--) if (GEO[i]) { last = i; break; }
+    if (last >= 0) {
+      const n = latLngToVec(LAT[last], LNG[last], 1);
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+      ring.position.copy(n).multiplyScalar(R + 0.9); ring.quaternion.copy(q); ring.visible = true;
+      ringDot.position.copy(n).multiplyScalar(R + 0.95); ringDot.quaternion.copy(q); ringDot.visible = true;
+    } else { ring.visible = false; ringDot.visible = false; }
+
+    // sun: subsolar point from the simulated clock
+    {
+      const d = new Date(simT * 1000);
+      const start = Date.UTC(d.getUTCFullYear(), 0, 1);
+      const doy = (simT * 1000 - start) / 86400000;
+      const decl = -23.44 * Math.cos(2 * Math.PI * (doy + 10) / 365.25);
+      const utcHours = d.getUTCHours() + d.getUTCMinutes() / 60;
+      const slng = (12 - utcHours) * 15;
+      latLngToVec(decl, slng, 500, sun.position);
+    }
+
+    // HUD
+    $('hud-date').textContent = fmtDate(simT) + '  ' + fmtTime(simT);
+    $('hud-photos').textContent = fmtInt(idx) + ' photos';
+    $('hud-flights').textContent = fmtInt(nf) + ' flights · ' + fmtInt(km) + ' km';
+    $('hud-cells').textContent = fmtInt(visited) + ' cells';
+    $('hud-pct').textContent = (area / EARTH_AREA * 100).toFixed(3) + ' %';
+
+    const year = new Date(simT * 1000).getFullYear();
+    if (state.year !== null && year !== state.year && !hard) { showYear(year); pushLog(yearLine(state.year), 'year'); }
+    state.year = year;
+    drawRiver();
+  }
+
+  function flightLine(f) {
+    return fmtDate(f.t).slice(2) + ' ' + fmtTime(f.t) + '  flight  ' + fmtCoord(f.aLat, f.aLng) + ' → ' + fmtCoord(f.bLat, f.bLng) + '  ' + fmtInt(f.km) + ' km';
+  }
+  function yearLine(y) {
+    const a = upperBound(T, Date.UTC(y, 0, 1) / 1000 - 1), b = upperBound(T, Date.UTC(y + 1, 0, 1) / 1000 - 1);
+    let nf = 0; for (const f of flights) if (f.t >= Date.UTC(y, 0, 1) / 1000 && f.t < Date.UTC(y + 1, 0, 1) / 1000) nf++;
+    return y + '  year  ' + fmtInt(b - a) + ' photos · ' + nf + ' flights';
+  }
+  function pushLog(line, cls) {
+    logLines.push({ line, cls });
+    while (logLines.length > 7) logLines.shift();
+    renderLog();
+  }
+  function rebuildLog(simT) {
+    logLines.length = 0;
+    const shown = flights.filter((f) => f.t <= simT).slice(-7);
+    for (const f of shown) logLines.push({ line: flightLine(f), cls: 'flight' });
+    renderLog();
+  }
+  function renderLog() {
+    $('log').innerHTML = logLines.map((l) => '<div class="l ' + l.cls + '">' + l.line + '</div>').join('');
+  }
+  function showYear(y) {
+    const el = $('yearcard');
+    el.textContent = y;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
+
+  // ---------- camera ----------
+  function focus(lat, lng) {
+    target.x = lat * Math.PI / 180;
+    let ty = -lng * Math.PI / 180;
+    while (ty - rot.y > Math.PI) ty -= 2 * Math.PI;
+    while (ty - rot.y < -Math.PI) ty += 2 * Math.PI;
+    target.y = ty;
+  }
+
+  function bindInput(canvas) {
+    const pointers = new Map();
+    let lastX = 0, lastY = 0, pinch = 0;
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.classList.add('drag'); }
+      if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+      userTouched = true;
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1 && dragging) {
+        const k = 0.0045 * zoom;
+        rot.y += (e.clientX - lastX) * k; rot.x += (e.clientY - lastY) * k;
+        rot.x = Math.max(-1.3, Math.min(1.3, rot.x));
+        target.x = rot.x; target.y = rot.y;
+        lastX = e.clientX; lastY = e.clientY;
+      } else if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0) zoomTarget = Math.max(0.55, Math.min(2.2, zoomTarget * pinch / d));
+        pinch = d;
+      }
+    });
+    const up = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = 0; if (pointers.size === 0) { dragging = false; canvas.classList.remove('drag'); } };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomTarget = Math.max(0.55, Math.min(2.2, zoomTarget * (1 + Math.sign(e.deltaY) * 0.08))); }, { passive: false });
+
+    // transport
+    $('play').addEventListener('click', togglePlay);
+    $('replay').addEventListener('click', () => { seek(state.t0, true); state.ended = false; state.playing = true; updatePlay(); });
+    document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => {
+      state.speed = parseFloat(b.dataset.speed);
+      document.querySelectorAll('[data-speed]').forEach((x) => x.classList.toggle('on', x === b));
+    }));
+    $('follow').addEventListener('change', (e) => { state.follow = e.target.checked; });
+    document.addEventListener('keydown', (e) => {
+      if (e.target && /INPUT|BUTTON|TEXTAREA/.test(e.target.tagName) && e.key !== ' ') return;
+      if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+      if (e.key === 'ArrowRight') seek(Math.min(state.t1, state.simT + SEC_PER_YEAR / 12), true);
+      if (e.key === 'ArrowLeft') seek(Math.max(state.t0, state.simT - SEC_PER_YEAR / 12), true);
+    });
+
+    // river scrubbing
+    const river = $('river');
+    const scrubTo = (e) => {
+      const r = river.getBoundingClientRect();
+      const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      seek(state.t0 + f * (state.t1 - state.t0), true);
+    };
+    river.addEventListener('pointerdown', (e) => { river.setPointerCapture(e.pointerId); state.scrubbing = true; scrubTo(e); });
+    river.addEventListener('pointermove', (e) => { if (state.scrubbing) scrubTo(e); });
+    const stop = () => { state.scrubbing = false; };
+    river.addEventListener('pointerup', stop); river.addEventListener('pointercancel', stop);
+  }
+
+  function togglePlay() {
+    if (state.ended) { seek(state.t0, true); state.ended = false; }
+    state.playing = !state.playing; updatePlay();
+  }
+  function updatePlay() { $('play').textContent = state.playing ? 'Pause' : (state.ended ? 'Done' : 'Play'); $('play').classList.toggle('on', state.playing); }
+  function seek(t, hard) {
+    state.simT = t; state.ended = t >= state.t1;
+    state.year = new Date(t * 1000).getFullYear();
+    if (hard) $('yearcard').classList.remove('show');
+    applyTime(t, hard);
+  }
+
+  // ---------- river ----------
+  function drawRiver() {
+    const c = $('river');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = c.clientWidth, h = c.clientHeight;
+    if (!w || !h) return;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const n = weekly.length, span = state.t1 - state.t0;
+    let max = 1; for (let i = 0; i < n; i++) if (weekly[i] > max) max = weekly[i];
+    const plotH = h - 16;
+    const xOf = (t) => (t - state.t0) / span * w;
+    const nowX = xOf(state.simT);
+
+    // year ticks
+    ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillStyle = '#7f8ca6'; ctx.strokeStyle = '#1c2742'; ctx.lineWidth = 1;
+    const y0 = new Date(state.t0 * 1000).getFullYear(), y1 = new Date(state.t1 * 1000).getFullYear();
+    const every = w < 560 ? 4 : w < 900 ? 2 : 1;
+    for (let y = y0 + 1; y <= y1; y++) {
+      const x = xOf(Date.UTC(y, 0, 1) / 1000);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, plotH); ctx.stroke();
+      if ((y - y0) % every === 0) ctx.fillText(String(y), x + 3, h - 4);
+    }
+
+    // area: whole history dim, played part bright
+    const area = (toX, color) => {
+      ctx.beginPath(); ctx.moveTo(0, plotH);
+      for (let i = 0; i < n; i++) {
+        const x = i / n * w; if (x > toX) break;
+        const v = Math.sqrt(weekly[i] / max);
+        ctx.lineTo(x, plotH - v * (plotH - 2));
+      }
+      ctx.lineTo(Math.min(toX, w), plotH); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+    };
+    area(w, 'rgba(95, 220, 255, 0.16)');
+    area(nowX, 'rgba(95, 220, 255, 0.62)');
+
+    ctx.strokeStyle = '#ff6a6a'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(nowX, 0); ctx.lineTo(nowX, plotH); ctx.stroke();
+  }
+
+  // ---------- loop ----------
+  let lastNow = 0, lastUpdate = -1e9;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - lastNow) / 1000) || 0; lastNow = now;
+
+    if (state.playing && !state.ended) {
+      state.simT += dt * YEARS_PER_SEC * state.speed * SEC_PER_YEAR;
+      if (state.simT >= state.t1) { state.simT = state.t1; state.playing = false; state.ended = true; updatePlay(); }
+      if (now - lastUpdate > 80) { applyTime(state.simT, false); lastUpdate = now; }
+    }
+
+    // flight heads
+    let flying = null;
+    for (const f of flights) {
+      if (!f.shown) continue;
+      if (f.head < 1) { f.head = Math.max(0, Math.min(1, (now - f.startedAt) / FLY_MS)); flying = f; }
+      f.mesh.material.uniforms.uHead.value = f.head;
+      f.mesh.material.uniforms.uAlpha.value = f.head < 1 ? 1 : f.alpha;
+    }
+    if (flying) { plane.visible = true; plane.position.copy(flying.curve.getPointAt(Math.max(0.001, Math.min(0.999, flying.head)))); }
+    else plane.visible = false;
+
+    // ring pulse
+    if (ring.visible) { const s = 1 + 0.35 * (0.5 + 0.5 * Math.sin(now / 260)); ring.scale.set(s, s, s); }
+
+    // camera easing + idle spin
+    if (!dragging) {
+      if (autoSpin && !flying && Math.abs(target.y - rot.y) < 0.002 && Math.abs(target.x - rot.x) < 0.002) target.y -= dt * 0.025;
+      const k = 1 - Math.exp(-dt * 3.2);
+      rot.x += (target.x - rot.x) * k; rot.y += (target.y - rot.y) * k;
+    }
+    group.rotation.set(rot.x, rot.y, 0);
+    zoom += (zoomTarget - zoom) * (1 - Math.exp(-dt * 6));
+    camera.position.set(0, 0, baseDist * zoom);
+    renderer.render(scene, camera);
+  }
+
+  function start() {
+    $('loading').hidden = true;
+    const first = (() => { for (let i = 0; i < N; i++) if (GEO[i]) return i; return -1; })();
+    if (first >= 0) { focus(LAT[first], LNG[first]); rot.x = target.x; rot.y = target.y; }
+    seek(state.t0, true);
+    requestAnimationFrame((t) => { lastNow = t; frame(t); });
+    setTimeout(() => { if (!userTouched && !state.playing) { state.playing = true; updatePlay(); } }, 900);
+  }
+})();
+</script>
+
+</body>
+</html>

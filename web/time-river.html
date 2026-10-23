@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Time River</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500&display=swap">
+<style>
+/* Layout: a full-screen WebGL river of photo cards under a starfield; glass panels pinned to the corners;
+   a glass timeline docked to the bottom edge that pulls out into years and months. Single dark console theme by design. */
+:root {
+  color-scheme: dark;
+  --bg-top: #0c1838;
+  --bg-mid: #050a18;
+  --bg-bot: #02040a;
+  --fg: #eef3ff;
+  --muted: rgba(238, 243, 255, 0.55);
+  --faint: rgba(238, 243, 255, 0.28);
+  --glass: rgba(255, 255, 255, 0.06);
+  --glass-strong: rgba(255, 255, 255, 0.11);
+  --edge: rgba(255, 255, 255, 0.14);
+  --accent: #8fc2ff;
+  --accent-soft: rgba(143, 194, 255, 0.35);
+  --sans: "Outfit", -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", Roboto, sans-serif;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg-bot); color: var(--fg); font-family: var(--sans); overflow: hidden; font-weight: 300; }
+[hidden] { display: none !important; }
+
+#app { position: fixed; inset: 0; background:
+  radial-gradient(120% 60% at 50% 56%, rgba(60, 100, 180, 0.16), rgba(0, 0, 0, 0) 60%),
+  linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 52%, var(--bg-bot) 100%); }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#view.drag { cursor: grabbing; }
+
+.glass { background: var(--glass); border: 1px solid var(--edge); border-radius: 16px; backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+
+#info {
+  position: absolute; top: 0; left: 0; pointer-events: none;
+  padding-top: calc(18px + env(safe-area-inset-top, 0px)); padding-left: var(--gutter-l);
+  font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+}
+#info .year { font-size: clamp(44px, 7vw, 92px); font-weight: 200; line-height: 1; letter-spacing: 0.02em; text-shadow: 0 0 30px rgba(143, 194, 255, 0.25); }
+#info .date { margin-top: 6px; font-size: clamp(15px, 1.6vw, 20px); font-weight: 300; color: var(--fg); }
+#info .count { margin-top: 2px; font-size: 13px; color: var(--muted); font-weight: 300; }
+#info .badge { display: inline-block; margin-top: 10px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--edge); font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
+#info .badge.fake { color: #ff9a9a; border-color: rgba(255, 154, 154, 0.4); }
+
+#toolbar {
+  position: absolute; top: 0; right: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px)); padding-right: var(--gutter-r);
+}
+.pills { display: flex; gap: 2px; padding: 4px; border-radius: 999px; }
+.pills button {
+  font: inherit; font-weight: 400; font-size: 13px; color: var(--fg); background: transparent; border: 1px solid transparent;
+  border-radius: 999px; padding: 7px 14px; cursor: pointer; line-height: 1; min-height: 32px; letter-spacing: 0.02em;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.pills button:hover { background: rgba(255, 255, 255, 0.08); }
+.pills button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pills button.on { background: rgba(255, 255, 255, 0.92); color: #0a1430; box-shadow: 0 0 18px rgba(255, 255, 255, 0.35); }
+.pills button#play { min-width: 76px; }
+#toolbar .hint { font-size: 11.5px; color: var(--faint); padding-right: 6px; letter-spacing: 0.04em; }
+
+#tip {
+  position: absolute; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -140%);
+  padding: 8px 12px; border-radius: 12px; font-size: 12.5px; white-space: nowrap; color: var(--fg); opacity: 0;
+  transition: opacity 0.15s; font-variant-numeric: tabular-nums;
+}
+#tip.show { opacity: 1; }
+#tip .sub { color: var(--muted); font-size: 11.5px; }
+
+#focusbox {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); pointer-events: none;
+  margin-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); padding: 10px 18px; border-radius: 14px;
+  font-size: 14px; text-align: center; opacity: 0; transition: opacity 0.2s; font-variant-numeric: tabular-nums; max-width: calc(100vw - 32px);
+}
+#focusbox.show { opacity: 1; }
+#focusbox .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+#tl {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: stretch;
+}
+#tl .bar { border-radius: 18px; padding: 8px 10px 10px; transition: padding 0.25s; }
+#tl .label { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 0.12em; color: var(--faint); padding: 0 6px 6px; text-transform: uppercase; }
+#tl .months { display: none; gap: 3px; height: 30px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; }
+#tl.open .months { display: flex; }
+#tl .years { position: relative; display: flex; gap: 2px; height: 32px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tl .years::-webkit-scrollbar, #tl .months::-webkit-scrollbar { display: none; }
+#tl .cell {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border-radius: 8px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.05); cursor: pointer;
+  font-size: 12px; font-weight: 400; color: var(--muted); white-space: nowrap; transition: background 0.15s, color 0.15s;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+}
+#tl .cell:hover, #tl .cell.active { background: rgba(255, 255, 255, 0.14); color: var(--fg); }
+#tl .cell.now { color: var(--fg); border-color: rgba(255, 255, 255, 0.25); }
+#tl .cell.narrow { font-size: 0; }
+#tl .months .cell { font-size: 11.5px; }
+#tl .playhead { position: absolute; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: #fff; border-radius: 2px; box-shadow: 0 0 10px rgba(255, 255, 255, 0.8); pointer-events: none; }
+#tl .mlabel { font-size: 11px; color: var(--faint); letter-spacing: 0.08em; padding: 0 6px 4px; display: none; }
+#tl.open .mlabel { display: block; }
+
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--muted); z-index: 5; letter-spacing: 0.1em; }
+
+@media (max-width: 720px) {
+  #toolbar .hint { display: none; }
+  .pills button { padding: 7px 11px; font-size: 12px; }
+  #tl .years { height: 30px; }
+  #tl .cell { font-size: 11px; }
+  #tl .years .cell { min-width: 44px; flex-grow: 1 !important; }
+  #tl .months .cell { min-width: 40px; flex-grow: 1 !important; }
+  #tl .cell.narrow { font-size: inherit; }
+  #focusbox { margin-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pills button, #tl .cell, #tip, #focusbox { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <canvas id="view" aria-label="Time River: twenty years of photos drifting in time order"></canvas>
+
+  <div id="info">
+    <div class="year" id="info-year">——</div>
+    <div class="date" id="info-date"></div>
+    <div class="count" id="info-count"></div>
+    <div class="badge" id="info-badge" hidden></div>
+  </div>
+
+  <div id="toolbar">
+    <div class="pills glass">
+      <button id="play" type="button" aria-label="Play or pause">Play</button>
+      <button id="replay" type="button">Restart</button>
+    </div>
+    <div class="pills glass" role="group" aria-label="Flow speed">
+      <button type="button" data-speed="1.1">Slow</button>
+      <button type="button" data-speed="2.2" class="on">Medium</button>
+      <button type="button" data-speed="5.5">Fast</button>
+    </div>
+    <div class="hint">Scroll to zoom · Drag to scrub · Click a photo to enlarge · Space to pause</div>
+  </div>
+
+  <div id="tip" class="glass"><div id="tip-main"></div><div class="sub" id="tip-sub"></div></div>
+  <div id="focusbox" class="glass"><div id="focus-main"></div><div class="sub" id="focus-sub"></div></div>
+
+  <div id="tl">
+    <div class="bar glass">
+      <div class="label"><span>Timeline</span><span id="tl-right"></span></div>
+      <div class="mlabel" id="tl-mlabel"></div>
+      <div class="months" id="tl-months"></div>
+      <div class="years" id="tl-years"><div class="playhead" id="tl-playhead"></div></div>
+    </div>
+  </div>
+
+  <div id="loading">Loading photo data…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  async function loadJSON(paths) {
+    for (const p of paths) { try { const r = await fetch(p); if (r.ok) return await r.json(); } catch (e) { /* try the next path */ } }
+    throw new Error('no data file found (looked for ' + paths.join(', ') + ')');
+  }
+  const S = 0.42;                  // river units per photo: constant density by construction
+  const LANES = [-0.95, -0.1, 0.8, 1.7, 2.6];
+  const WATER_Y = -1.45;
+  const POOL = 170;
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const $ = (id) => document.getElementById(id);
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- helpers ----------
+  function hash(i) { let x = (i + 0x9e3779b9) | 0; x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+  function upperBound(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= x) lo = m + 1; else hi = m; } return lo; }
+  const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
+  const pad2 = (n) => (n < 10 ? '0' : '') + n;
+  function haversine(aLat, aLng, bLat, bLng) {
+    const p1 = aLat * Math.PI / 180, p2 = bLat * Math.PI / 180, dp = (bLat - aLat) * Math.PI / 180, dl = (bLng - aLng) * Math.PI / 180;
+    const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(h));
+  }
+  const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  function fmtCoord(lat, lng) { return Math.abs(lat).toFixed(2) + (lat >= 0 ? 'N' : 'S') + ' ' + Math.abs(lng).toFixed(2) + (lng >= 0 ? 'E' : 'W'); }
+
+  // ---------- state ----------
+  const state = { pos: 0, speed: 2.2, playing: false, dragging: false, jump: null, focus: -1, hover: -1, camZ: 15, camZTarget: 15, ended: false, synthetic: false, thumbs: null };
+  let N = 0, T, LAT, LNG, GEO, TRIP, HOUR;
+  let renderer, scene, camera, raycaster, stars, dust, water;
+  const pool = [], active = new Map(), free = [];
+  let noisePattern = null;
+  let unitsPerPixel = 0.02;
+
+  // ---------- load ----------
+  loadJSON(['../data/photos.json', '../data/sample/photos.json'])
+    .then((d) => { prepare(d); build(); buildTimeline(); start(); })
+    .catch((err) => { $('loading').textContent = 'Failed to load data: ' + err.message; });
+
+  function prepare(d) {
+    N = d.t.length;
+    T = Float64Array.from(d.t);
+    LAT = new Float64Array(N); LNG = new Float64Array(N); GEO = new Uint8Array(N); TRIP = new Uint8Array(N);
+    HOUR = d.hour ? Float32Array.from(d.hour.map((h) => (h == null ? -1 : h))) : null;
+    for (let i = 0; i < N; i++) { const la = d.lat[i], lo = d.lng[i]; if (la != null && lo != null) { LAT[i] = la; LNG[i] = lo; GEO[i] = 1; } }
+    state.synthetic = !!(d.meta && d.meta.source === 'synthetic');
+    state.thumbs = d.meta && d.meta.thumbs ? d.meta.thumbs : null;
+
+    // home per year = most common 1° cell; a photo >150 km from that is "away"
+    const years = new Map();
+    for (let i = 0; i < N; i++) {
+      if (!GEO[i]) continue;
+      const y = new Date(T[i] * 1000).getFullYear();
+      const key = Math.floor(LAT[i]) * 1000 + Math.floor(LNG[i]);
+      let m = years.get(y); if (!m) { m = new Map(); years.set(y, m); }
+      m.set(key, (m.get(key) || 0) + 1);
+    }
+    const home = new Map();
+    for (const [y, m] of years) { let best = null, bn = -1; for (const [k, n] of m) if (n > bn) { bn = n; best = k; } home.set(y, [Math.floor(best / 1000) + 0.5, ((best % 1000) + 1000) % 1000 + 0.5]); }
+    for (let i = 0; i < N; i++) {
+      if (!GEO[i]) continue;
+      const h = home.get(new Date(T[i] * 1000).getFullYear());
+      if (h && haversine(LAT[i], LNG[i], h[0], h[1] > 500 ? h[1] - 1000 : h[1]) > 150) TRIP[i] = 1;
+    }
+    const badge = $('info-badge');
+    if (state.synthetic) { badge.textContent = 'Synthetic photos · images are generated by code'; badge.classList.add('fake'); badge.hidden = false; }
+  }
+
+  // ---------- fake photo painter (used when there are no real thumbnails) ----------
+  const PAL = {
+    sky: [['#f7b977', '#e97a6e', '#4b3b7c'], ['#a9d8ff', '#5a98d8', '#1f447f'], ['#ffd9a6', '#ff9d72', '#6e3f7d'], ['#dfe9ff', '#9fb6e6', '#4e5f98']],
+    sea: [['#c6ecff', '#52acdc', '#124474'], ['#e3f7ff', '#5fb9cd', '#1d627e'], ['#9fd0e8', '#2f7fb0', '#0d3556']],
+    city: [['#1c2748', '#3d4f82', '#0a0f20'], ['#2d2444', '#7e4e70', '#100a21'], ['#33435e', '#8db3d2', '#111a29'], ['#4a3a2a', '#c48a5a', '#1a120c']],
+    street: [['#cdbb9f', '#8e7758', '#3c2f24'], ['#d9cab3', '#9e907d', '#4b4138'], ['#b9c4cf', '#6f7f8f', '#2e3640']],
+    food: [['#f5e6cb', '#dca45e', '#7c4c2c'], ['#f9f0e2', '#eab56e', '#8c3c2c'], ['#efe7df', '#c9a98f', '#5a3d33']],
+    people: [['#f2dbca', '#cb9c7c', '#5c3c3c'], ['#ebe4da', '#b9ab9c', '#3c3c4c'], ['#d9e4ef', '#8ea4bb', '#2c3a4c']],
+    green: [['#e1f0ca', '#71a85c', '#204c2c'], ['#d1e8c4', '#51905c', '#183c2c'], ['#f0f4d8', '#a8c46a', '#3a5a2a']],
+    night: [['#0b1026', '#1c2c5c', '#060810'], ['#130b26', '#5c2c7c', '#080610'], ['#0a1a2a', '#1c5c7c', '#050a10']],
+  };
+  const TRIP_KINDS = ['sky', 'sea', 'city', 'street', 'green', 'city', 'sky', 'food'];
+  const HOME_KINDS = ['food', 'people', 'green', 'night', 'street', 'sky', 'people', 'food'];
+
+  function makeNoise() {
+    const c = document.createElement('canvas'); c.width = 96; c.height = 96;
+    const ctx = c.getContext('2d'); const img = ctx.createImageData(96, 96);
+    for (let i = 0; i < img.data.length; i += 4) { const v = 128 + (Math.random() - 0.5) * 140; img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = 255; }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  function paintFake(ctx, w, h, i, kind) {
+    const rnd = (k) => hash(i * 37 + k);
+    const pals = PAL[kind]; const pal = pals[Math.floor(rnd(1) * pals.length)];
+    const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, pal[0]); g.addColorStop(0.55, pal[1]); g.addColorStop(1, pal[2]);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.save();
+    if (kind === 'sky') {
+      const sx = w * (0.25 + 0.5 * rnd(2)), sy = h * (0.2 + 0.35 * rnd(3)), sr = w * (0.06 + 0.08 * rnd(4));
+      const rg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr * 4); rg.addColorStop(0, 'rgba(255,250,230,0.95)'); rg.addColorStop(0.18, 'rgba(255,240,200,0.6)'); rg.addColorStop(1, 'rgba(255,220,180,0)');
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      for (let k = 0; k < 4; k++) { const cx = w * rnd(10 + k), cy = h * (0.3 + 0.3 * rnd(20 + k)); ctx.beginPath(); ctx.ellipse(cx, cy, w * (0.1 + 0.12 * rnd(30 + k)), h * 0.035, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = 'rgba(20,16,40,0.55)'; ctx.fillRect(0, h * 0.78, w, h);
+    } else if (kind === 'sea') {
+      const hy = h * (0.42 + 0.16 * rnd(2));
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(0, hy - 1, w, 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1.2;
+      for (let k = 0; k < 9; k++) { const y = hy + (k + 1) * (h - hy) / 10 + rnd(40 + k) * 4; ctx.beginPath(); ctx.moveTo(w * rnd(50 + k) * 0.5, y); ctx.lineTo(w * (0.5 + rnd(60 + k) * 0.5), y); ctx.stroke(); }
+    } else if (kind === 'city') {
+      const n = 7 + Math.floor(rnd(2) * 7); let x = 0;
+      for (let k = 0; k < n; k++) {
+        const bw = w / n * (0.6 + rnd(10 + k) * 0.8), bh = h * (0.25 + rnd(20 + k) * 0.5);
+        ctx.fillStyle = 'rgba(8,10,22,' + (0.55 + rnd(30 + k) * 0.35) + ')'; ctx.fillRect(x, h - bh, bw, bh);
+        ctx.fillStyle = 'rgba(255,220,150,0.75)';
+        for (let r = 0; r < 14; r++) if (rnd(100 + k * 20 + r) < 0.45) ctx.fillRect(x + 3 + (r % 3) * (bw / 3.4), h - bh + 6 + Math.floor(r / 3) * (bh / 5), 2.5, 3.5);
+        x += bw * 0.92;
+      }
+    } else if (kind === 'street') {
+      const vx = w * (0.35 + 0.3 * rnd(2)), vy = h * (0.4 + 0.15 * rnd(3));
+      ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1.5;
+      for (let k = 0; k < 7; k++) { ctx.beginPath(); ctx.moveTo(vx, vy); ctx.lineTo(w * (k / 6), h); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(10,8,8,0.45)'; ctx.fillRect(0, 0, w * (0.08 + 0.1 * rnd(4)), h * 0.75); ctx.fillRect(w * (0.82 + 0.1 * rnd(5)), 0, w, h * 0.7);
+      ctx.fillStyle = 'rgba(255,230,200,0.5)'; ctx.fillRect(w * 0.22, h * 0.3, w * 0.03, w * 0.03); ctx.fillRect(w * 0.74, h * 0.34, w * 0.025, w * 0.025);
+    } else if (kind === 'food') {
+      const cx = w * 0.5 + (rnd(2) - 0.5) * w * 0.2, cy = h * 0.55, pr = Math.min(w, h) * 0.36;
+      const pg = ctx.createRadialGradient(cx, cy, pr * 0.2, cx, cy, pr); pg.addColorStop(0, 'rgba(255,255,255,0.95)'); pg.addColorStop(1, 'rgba(235,228,220,0.9)');
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(cx, cy, pr, 0, Math.PI * 2); ctx.fill();
+      const cols = ['#c0392b', '#e67e22', '#8e6a3b', '#6a8f3b', '#f1c40f', '#a04b2b', '#d98b6a'];
+      for (let k = 0; k < 5; k++) { ctx.fillStyle = cols[Math.floor(rnd(10 + k) * cols.length)]; ctx.beginPath(); ctx.arc(cx + (rnd(20 + k) - 0.5) * pr * 1.1, cy + (rnd(30 + k) - 0.5) * pr * 1.1, pr * (0.12 + rnd(40 + k) * 0.2), 0, Math.PI * 2); ctx.fill(); }
+    } else if (kind === 'people') {
+      for (let k = 0; k < 5; k++) { ctx.fillStyle = 'rgba(255,255,255,' + (0.05 + rnd(50 + k) * 0.12) + ')'; ctx.beginPath(); ctx.arc(w * rnd(60 + k), h * rnd(70 + k) * 0.7, w * (0.04 + rnd(80 + k) * 0.08), 0, Math.PI * 2); ctx.fill(); }
+      const n = 1 + Math.floor(rnd(2) * 3);
+      const skins = ['#f1c9a5', '#e0b08a', '#c68f6a', '#8d5a3b'], cloth = ['#2c3e50', '#8e44ad', '#c0392b', '#16a085', '#f39c12', '#ecf0f1', '#34495e'];
+      for (let k = 0; k < n; k++) {
+        const cx = w * ((k + 1) / (n + 1)) + (rnd(10 + k) - 0.5) * w * 0.12, hr = Math.min(w, h) * (0.09 + rnd(20 + k) * 0.05), cy = h * (0.42 + rnd(30 + k) * 0.1);
+        ctx.fillStyle = cloth[Math.floor(rnd(40 + k) * cloth.length)]; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(cx - hr * 1.6, cy + hr * 0.9, hr * 3.2, h, hr) : ctx.rect(cx - hr * 1.6, cy + hr * 0.9, hr * 3.2, h); ctx.fill();
+        ctx.fillStyle = skins[Math.floor(rnd(50 + k) * skins.length)]; ctx.beginPath(); ctx.arc(cx, cy, hr, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(30,20,20,0.85)'; ctx.beginPath(); ctx.arc(cx, cy - hr * 0.35, hr * 1.02, Math.PI, Math.PI * 2); ctx.fill();
+      }
+    } else if (kind === 'green') {
+      for (let k = 0; k < 9; k++) {
+        const tx = w * rnd(10 + k), th = h * (0.3 + rnd(20 + k) * 0.5), tw = w * (0.06 + rnd(30 + k) * 0.08);
+        ctx.fillStyle = 'rgba(20,60,30,' + (0.35 + rnd(40 + k) * 0.45) + ')'; ctx.beginPath(); ctx.moveTo(tx, h - th); ctx.lineTo(tx - tw, h); ctx.lineTo(tx + tw, h); ctx.closePath(); ctx.fill();
+      }
+      const lg = ctx.createLinearGradient(w * 0.2, 0, w * 0.8, h); lg.addColorStop(0, 'rgba(255,255,220,0.22)'); lg.addColorStop(1, 'rgba(255,255,220,0)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, w, h);
+    } else if (kind === 'night') {
+      ctx.strokeStyle = 'rgba(255,200,120,0.5)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      for (let k = 0; k < 6; k++) { const y = h * (0.4 + rnd(10 + k) * 0.5); ctx.beginPath(); ctx.moveTo(w * rnd(20 + k) * 0.6, y); ctx.lineTo(w * (0.4 + rnd(30 + k) * 0.6), y + (rnd(40 + k) - 0.5) * 10); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let k = 0; k < 10; k++) ctx.fillRect(w * rnd(50 + k), h * rnd(60 + k) * 0.6, 1.5, 1.5);
+    }
+    ctx.restore();
+    // film grain + vignette
+    ctx.globalAlpha = 0.16; ctx.fillStyle = noisePattern; ctx.fillRect(0, 0, w, h); ctx.globalAlpha = 1;
+    const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.38)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
+  }
+
+  // ---------- scene ----------
+  const cardVert = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+  const cardFrag = [
+    'uniform sampler2D map; uniform float uOpacity; uniform float uGlow; uniform float uRadius; uniform vec2 uSize; uniform float uRefl; uniform float uDim;',
+    'varying vec2 vUv;',
+    'float rr(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r; }',
+    'void main(){',
+    '  vec2 p = (vUv - 0.5) * uSize;',
+    '  float d = rr(p, uSize * 0.5, uRadius);',
+    '  float aa = fwidth(d) * 1.4;',
+    '  float inside = 1.0 - smoothstep(0.0, aa, d);',
+    '  vec4 c = texture2D(map, vUv);',
+    '  float vig = smoothstep(1.0, 0.3, length(vUv - 0.5) * 1.15);',
+    '  c.rgb *= mix(0.82, 1.0, vig) * uDim;',
+    '  float ring = 1.0 - smoothstep(0.0, 0.035 + aa, abs(d + 0.012));',
+    '  c.rgb = mix(c.rgb, vec3(1.0), ring * uGlow);',
+    '  c.rgb += vec3(0.06) * smoothstep(0.4, 0.0, vUv.y) * (1.0 - uRefl);',
+    '  float a = inside * uOpacity;',
+    '  if (uRefl > 0.5) a *= (1.0 - vUv.y) * (1.0 - vUv.y) * 0.42;',
+    '  gl_FragColor = vec4(c.rgb, a);',
+    '}'].join('\n');
+
+  function build() {
+    const canvas = $('view');
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x000000, 0);
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
+    raycaster = new THREE.Raycaster();
+    noisePattern = (document.createElement('canvas').getContext('2d')).createPattern(makeNoise(), 'repeat');
+
+    // water
+    water = new THREE.Mesh(new THREE.PlaneGeometry(600, 240, 1, 1), new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uNear: { value: new THREE.Color(0x03060e) }, uFar: { value: new THREE.Color(0x0b1631) } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform float uTime; uniform vec3 uNear; uniform vec3 uFar; varying vec2 vUv; void main(){ float t = vUv.y; vec3 col = mix(uNear, uFar, pow(t, 0.55)); float r = sin(vUv.x * 900.0 + uTime * 0.6 + sin(vUv.y * 400.0 + uTime * 0.4) * 2.0) * 0.5 + 0.5; col += r * 0.012 * (1.0 - t); gl_FragColor = vec4(col, 1.0); }',
+      depthWrite: true,
+    }));
+    water.rotation.x = -Math.PI / 2; water.position.set(0, WATER_Y, -80);
+    scene.add(water);
+
+    // stars
+    {
+      const n = 2600, pos = new Float32Array(n * 3), ph = new Float32Array(n), sz = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = (Math.random() - 0.5) * 320; pos[i * 3 + 1] = WATER_Y + 1 + Math.pow(Math.random(), 0.7) * 90; pos[i * 3 + 2] = -70 - Math.random() * 90;
+        ph[i] = Math.random() * Math.PI * 2; sz[i] = 0.6 + Math.pow(Math.random(), 3) * 2.4;
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aPhase', new THREE.BufferAttribute(ph, 1)); g.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
+      stars = new THREE.Points(g, new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uPR: { value: renderer.getPixelRatio() } },
+        vertexShader: 'attribute float aPhase; attribute float aSize; uniform float uTime; uniform float uPR; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float tw = 0.65 + 0.35 * sin(uTime * (0.6 + aSize * 0.5) + aPhase); vA = tw; gl_PointSize = aSize * uPR * tw * 1.6; gl_Position = projectionMatrix * mv; }',
+        fragmentShader: 'varying float vA; void main(){ vec2 p = gl_PointCoord - 0.5; float d = length(p); float a = smoothstep(0.5, 0.1, d); gl_FragColor = vec4(vec3(0.85, 0.9, 1.0), a * vA * 0.9); }',
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      }));
+      scene.add(stars);
+    }
+    // drifting dust (bokeh)
+    {
+      const n = 180, pos = new Float32Array(n * 3), ph = new Float32Array(n), sz = new Float32Array(n), sp = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = (Math.random() - 0.5) * 70; pos[i * 3 + 1] = -1.2 + Math.random() * 9; pos[i * 3 + 2] = -14 + Math.random() * 20;
+        ph[i] = Math.random() * Math.PI * 2; sz[i] = 6 + Math.random() * 16; sp[i] = 0.08 + Math.random() * 0.25;
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aPhase', new THREE.BufferAttribute(ph, 1)); g.setAttribute('aSize', new THREE.BufferAttribute(sz, 1)); g.setAttribute('aSpeed', new THREE.BufferAttribute(sp, 1));
+      dust = new THREE.Points(g, new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uPR: { value: renderer.getPixelRatio() } },
+        vertexShader: 'attribute float aPhase; attribute float aSize; attribute float aSpeed; uniform float uTime; uniform float uPR; varying float vA; void main(){ vec3 p = position; p.x = mod(p.x - uTime * aSpeed + 35.0, 70.0) - 35.0; p.y += sin(uTime * 0.3 + aPhase) * 0.35; vec4 mv = modelViewMatrix * vec4(p, 1.0); vA = 0.5 + 0.5 * sin(uTime * 0.5 + aPhase); gl_PointSize = aSize * uPR * (14.0 / -mv.z); gl_Position = projectionMatrix * mv; }',
+        fragmentShader: 'varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vec3(0.75, 0.85, 1.0), a * 0.16 * vA); }',
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      }));
+      scene.add(dust);
+    }
+
+    // card pool
+    const plane = new THREE.PlaneGeometry(1, 1);
+    for (let k = 0; k < POOL; k++) {
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 176;
+      const tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+      const mk = (refl) => new THREE.ShaderMaterial({
+        uniforms: { map: { value: tex }, uOpacity: { value: 1 }, uGlow: { value: 0 }, uRadius: { value: 0.06 }, uSize: { value: new THREE.Vector2(1.4, 0.95) }, uRefl: { value: refl }, uDim: { value: 1 } },
+        vertexShader: cardVert, fragmentShader: cardFrag, transparent: true, depthWrite: !refl, side: THREE.DoubleSide, extensions: { derivatives: true },
+      });
+      const front = new THREE.Mesh(plane, mk(0)); const back = new THREE.Mesh(plane, mk(1));
+      front.visible = false; back.visible = false; back.renderOrder = -1;
+      scene.add(front); scene.add(back);
+      const e = { i: -1, cv, ctx: cv.getContext('2d'), tex, front, back, p: null };
+      front.userData.entry = e;
+      pool.push(e); free.push(e);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    bindInput(canvas);
+  }
+
+  function resize() {
+    const canvas = $('view');
+    const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    placeCamera();
+  }
+  function placeCamera() {
+    camera.position.set(0, 1.0, state.camZ);
+    camera.lookAt(0, 0.55, 0);
+    const vis = 2 * state.camZ * Math.tan(camera.fov * Math.PI / 360) * camera.aspect;
+    unitsPerPixel = vis / (renderer.domElement.clientWidth || window.innerWidth);
+    return vis;
+  }
+
+  // ---------- cards ----------
+  function params(i) {
+    const r = (k) => hash(i * 13 + k);
+    const lane = (i * 2 + (r(1) < 0.18 ? 1 : 0)) % LANES.length;
+    const portrait = r(5) < 0.32;
+    const sc = 0.8 + r(6) * 0.28;
+    return {
+      x: (r(4) - 0.5) * 0.5, y: LANES[lane] + (r(2) - 0.5) * 0.3, z: -4.0 + r(3) * 4.8,
+      w: (portrait ? 0.95 : 1.42) * sc, h: (portrait ? 1.28 : 0.95) * sc, portrait,
+      rx: (r(7) - 0.5) * 0.22, ry: (r(8) - 0.5) * 0.55, rz: (r(9) - 0.5) * 0.16,
+      phase: r(10) * Math.PI * 2, bob: 0.035 + r(11) * 0.05, sway: 0.5 + r(12) * 0.6,
+      kind: (TRIP[i] ? TRIP_KINDS : HOME_KINDS)[Math.floor(r(14) * 8)],
+    };
+  }
+
+  function acquire(i) {
+    const e = free.pop(); if (!e) return null;
+    const p = params(i);
+    e.i = i; e.p = p; active.set(i, e);
+    const W = p.portrait ? 176 : 256, H = p.portrait ? 256 : 176;
+    if (e.cv.width !== W || e.cv.height !== H) { e.cv.width = W; e.cv.height = H; }
+    if (state.thumbs) {
+      e.ctx.fillStyle = '#1a2238'; e.ctx.fillRect(0, 0, W, H); e.tex.needsUpdate = true;
+      const img = new Image(); img.onload = () => { if (e.i !== i) return; e.ctx.drawImage(img, 0, 0, W, H); e.tex.needsUpdate = true; };
+      img.src = state.thumbs.replace('{i}', String(i));
+    } else {
+      paintFake(e.ctx, W, H, i, p.kind); e.tex.needsUpdate = true;
+    }
+    for (const m of [e.front, e.back]) { m.material.uniforms.uSize.value.set(p.w, p.h); m.visible = true; }
+    e.front.scale.set(p.w, p.h, 1); e.back.scale.set(p.w, -p.h, 1);
+    return e;
+  }
+  function release(e) { active.delete(e.i); e.i = -1; e.front.visible = false; e.back.visible = false; free.push(e); }
+
+  function updateCards(now) {
+    const vis = placeCamera();
+    const half = vis / 2 + 2.5;
+    const lo = Math.max(0, Math.floor((state.pos - half) / S)), hi = Math.min(N - 1, Math.ceil((state.pos + half) / S));
+    for (const [i, e] of active) if ((i < lo || i > hi) && i !== state.focus) release(e);
+    for (let i = lo; i <= hi; i++) if (!active.has(i)) { if (!acquire(i)) break; }
+    if (state.focus >= 0 && !active.has(state.focus)) acquire(state.focus);
+
+    const t = now / 1000;
+    for (const [i, e] of active) {
+      const p = e.p;
+      const x = i * S + p.x - state.pos;
+      const sw = reduced ? 0 : 1;
+      let px = x, py = p.y + Math.sin(t * p.sway + p.phase) * p.bob * sw, pz = p.z;
+      let rx = p.rx + Math.sin(t * 0.7 * p.sway + p.phase) * 0.05 * sw, ry = p.ry + Math.sin(t * 0.5 * p.sway + p.phase * 1.3) * 0.08 * sw, rz = p.rz + Math.sin(t * 0.6 * p.sway + p.phase * 0.7) * 0.03 * sw;
+      let scale = 1;
+      const isFocus = i === state.focus, isHover = i === state.hover && state.focus < 0;
+      if (isFocus) {
+        const fz = state.camZ - 4.6, fs = Math.min(3.1, (2 * 4.6 * Math.tan(camera.fov * Math.PI / 360) * 0.72) / p.h);
+        e.fx = e.fx == null ? x : e.fx + (0 - e.fx) * 0.14; e.fy = e.fy == null ? py : e.fy + (0.75 - e.fy) * 0.14; e.fz = e.fz == null ? pz : e.fz + (fz - e.fz) * 0.14; e.fs = e.fs == null ? 1 : e.fs + (fs - e.fs) * 0.14;
+        px = e.fx; py = e.fy; pz = e.fz; scale = e.fs; rx *= 0.1; ry *= 0.1; rz *= 0.1;
+      } else { e.fx = e.fy = e.fz = e.fs = null; if (isHover) scale = 1.07; }
+      const dist = Math.max(0, state.camZ - pz);
+      const fade = Math.max(0, Math.min(1, 1 - (dist - 16) / 22));
+      e.front.position.set(px, py, pz); e.front.rotation.set(rx, ry, rz); e.front.scale.set(p.w * scale, p.h * scale, 1);
+      e.back.position.set(px, 2 * WATER_Y - py, pz); e.back.rotation.set(-rx, ry, -rz); e.back.scale.set(p.w * scale, -p.h * scale, 1);
+      e.back.visible = !isFocus;
+      const uf = e.front.material.uniforms, ub = e.back.material.uniforms;
+      uf.uOpacity.value = fade * (state.focus >= 0 && !isFocus ? 0.35 : 1);
+      ub.uOpacity.value = fade * (state.focus >= 0 ? 0.3 : 1);
+      uf.uGlow.value += (((isHover || isFocus) ? 1 : 0) - uf.uGlow.value) * 0.2;
+      uf.uDim.value = state.focus >= 0 && !isFocus ? 0.55 : 1;
+      e.front.renderOrder = isFocus ? 10 : 0;
+    }
+  }
+
+  // ---------- info / timeline ----------
+  let yearStarts = [], yearRanges = [], yearCells = [], y0 = 0, y1 = 0;
+  function nowIndex() { return Math.max(0, Math.min(N - 1, Math.round(state.pos / S))); }
+  function photoDate(i) { return new Date(T[i] * 1000); }
+  function describe(i) {
+    const d = photoDate(i);
+    const main = MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    const sub = (GEO[i] ? fmtCoord(LAT[i], LNG[i]) + (TRIP[i] ? ' · away' : ' · near home') : 'no location') + ' · #' + fmtInt(i + 1) + (state.synthetic ? ' · synthetic' : '');
+    return { main, sub };
+  }
+  function updateInfo() {
+    const i = nowIndex(), d = photoDate(i);
+    $('info-year').textContent = d.getFullYear();
+    $('info-date').textContent = MONTHS[d.getMonth()] + ' ' + d.getDate() + ' · ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    $('info-count').textContent = fmtInt(i + 1) + ' / ' + fmtInt(N) + ' photos';
+    const y = d.getFullYear();
+    {
+      // playhead follows the year cells, so it is right whether cells are proportional (desktop) or equal and scrollable (phone)
+      const cell = yearCells[y - y0], rng = yearRanges[y - y0];
+      if (cell && rng) {
+        const f = rng[1] > rng[0] ? Math.max(0, Math.min(1, (state.pos / S - rng[0]) / (rng[1] - rng[0]))) : 0;
+        const left = cell.offsetLeft + cell.offsetWidth * f;
+        $('tl-playhead').style.left = left + 'px';
+        const row = $('tl-years');
+        if (row.scrollWidth > row.clientWidth + 2 && (left < row.scrollLeft + 20 || left > row.scrollLeft + row.clientWidth - 20)) row.scrollLeft = Math.max(0, left - row.clientWidth / 2);
+      }
+    }
+    if (y !== updateInfo.lastYear) {
+      updateInfo.lastYear = y;
+      document.querySelectorAll('#tl-years .cell').forEach((c) => c.classList.toggle('now', +c.dataset.year === y));
+      if (!$('tl').classList.contains('open') || $('tl').dataset.pinned !== '1') showMonths(y);
+    }
+  }
+  function buildTimeline() {
+    y0 = photoDate(0).getFullYear(); y1 = photoDate(N - 1).getFullYear();
+    const years = $('tl-years');
+    for (let y = y0; y <= y1; y++) {
+      const a = upperBound(T, new Date(y, 0, 1).getTime() / 1000 - 1), b = upperBound(T, new Date(y + 1, 0, 1).getTime() / 1000 - 1);
+      yearStarts.push(a); yearRanges.push([a, b]);
+      const cell = document.createElement('button'); cell.type = 'button'; cell.className = 'cell'; cell.dataset.year = y; cell.textContent = y;
+      yearCells.push(cell);
+      cell.style.flexGrow = Math.max(b - a, N * 0.004);
+      cell.title = y + ': ' + fmtInt(b - a) + ' photos';
+      cell.addEventListener('mouseenter', () => { showMonths(y); $('tl').dataset.pinned = '0'; });
+      cell.addEventListener('click', () => { showMonths(y); $('tl').dataset.pinned = '1'; jumpTo(a * S); });
+      years.appendChild(cell);
+    }
+    $('tl-right').textContent = y0 + ' → ' + y1 + ' · ' + fmtInt(N) + ' photos · width = photo count';
+    const tl = $('tl');
+    tl.addEventListener('mouseenter', () => tl.classList.add('open'));
+    tl.addEventListener('mouseleave', () => { if (tl.dataset.pinned !== '1') tl.classList.remove('open'); });
+    tl.addEventListener('click', (e) => { if (e.target.closest('.cell')) return; tl.classList.toggle('open'); tl.dataset.pinned = tl.classList.contains('open') ? '1' : '0'; });
+    fitLabels();
+    window.addEventListener('resize', fitLabels);
+  }
+  function showMonths(y) {
+    const row = $('tl-months'); row.innerHTML = '';
+    $('tl-mlabel').textContent = y + ' · months';
+    for (let m = 0; m < 12; m++) {
+      const a = upperBound(T, new Date(y, m, 1).getTime() / 1000 - 1), b = upperBound(T, new Date(y, m + 1, 1).getTime() / 1000 - 1);
+      const cell = document.createElement('button'); cell.type = 'button'; cell.className = 'cell'; cell.textContent = MONTHS[m];
+      cell.style.flexGrow = Math.max(b - a, 1) + 8; cell.title = MONTHS[m] + ' ' + y + ': ' + fmtInt(b - a) + ' photos';
+      if (b - a === 0) cell.style.opacity = 0.35;
+      cell.addEventListener('click', () => jumpTo(a * S));
+      row.appendChild(cell);
+    }
+    fitLabels();
+  }
+  function fitLabels() {
+    document.querySelectorAll('#tl .cell').forEach((c) => { c.classList.remove('narrow'); if (c.clientWidth < 34) c.classList.add('narrow'); });
+  }
+  function jumpTo(target) {
+    target = Math.max(0, Math.min(N * S, target));
+    state.focus = -1; $('focusbox').classList.remove('show');
+    state.jump = { from: state.pos, to: target, start: performance.now(), dur: Math.max(700, Math.min(2600, Math.abs(target - state.pos) * 0.9)) };
+    state.ended = false;
+  }
+
+  // ---------- input ----------
+  function bindInput(canvas) {
+    const pointers = new Map();
+    let lastX = 0, moved = 0, pinch = 0, downAt = 0;
+    const tip = $('tip');
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) { state.dragging = true; lastX = e.clientX; moved = 0; downAt = performance.now(); canvas.classList.add('drag'); }
+      if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (pointers.has(e.pointerId)) {
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size === 1 && state.dragging) {
+          const dx = e.clientX - lastX; moved += Math.abs(dx); lastX = e.clientX;
+          if (state.focus < 0) { state.pos -= dx * unitsPerPixel; state.pos = Math.max(-2, Math.min(N * S + 2, state.pos)); state.jump = null; state.ended = false; }
+        } else if (pointers.size === 2) {
+          const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (pinch > 0) state.camZTarget = Math.max(7, Math.min(34, state.camZTarget * pinch / d)); pinch = d;
+        }
+      }
+      // hover
+      const r = canvas.getBoundingClientRect();
+      mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+      mouse.px = e.clientX; mouse.py = e.clientY; mouse.has = true;
+    });
+    const up = (e) => {
+      pointers.delete(e.pointerId); if (pointers.size < 2) pinch = 0;
+      if (pointers.size === 0) {
+        state.dragging = false; canvas.classList.remove('drag');
+        if (moved < 5 && performance.now() - downAt < 500) {
+          if (state.focus >= 0) { state.focus = -1; $('focusbox').classList.remove('show'); }
+          else if (state.hover >= 0) { state.focus = state.hover; const d = describe(state.focus); $('focus-main').textContent = d.main; $('focus-sub').textContent = d.sub; $('focusbox').classList.add('show'); tip.classList.remove('show'); }
+        }
+      }
+    };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('pointerleave', () => { mouse.has = false; });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); state.camZTarget = Math.max(7, Math.min(34, state.camZTarget * (1 + Math.sign(e.deltaY) * 0.09))); }, { passive: false });
+
+    $('play').addEventListener('click', togglePlay);
+    $('replay').addEventListener('click', () => { jumpTo(0); state.playing = true; updatePlay(); });
+    document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => {
+      state.speed = parseFloat(b.dataset.speed);
+      document.querySelectorAll('[data-speed]').forEach((x) => x.classList.toggle('on', x === b));
+    }));
+    document.addEventListener('keydown', (e) => {
+      if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+      if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+      if (e.key === 'Escape' && state.focus >= 0) { state.focus = -1; $('focusbox').classList.remove('show'); }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        const d = photoDate(nowIndex()); const m = d.getMonth() + (e.key === 'ArrowRight' ? 1 : -1);
+        const idx = upperBound(T, new Date(d.getFullYear(), m, 1).getTime() / 1000 - 1); jumpTo(idx * S);
+      }
+    });
+  }
+  const mouse = { x: 0, y: 0, px: 0, py: 0, has: false };
+  function togglePlay() { if (state.ended) jumpTo(0); state.playing = !state.playing; updatePlay(); }
+  function updatePlay() { const b = $('play'); b.textContent = state.playing ? 'Pause' : 'Play'; b.classList.toggle('on', state.playing); }
+
+  // ---------- loop ----------
+  let lastNow = 0, lastHover = 0, lastInfo = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - lastNow) / 1000) || 0; lastNow = now;
+
+    if (state.jump) {
+      const j = state.jump, k = Math.min(1, (now - j.start) / j.dur);
+      state.pos = j.from + (j.to - j.from) * easeInOut(k);
+      if (k >= 1) state.jump = null;
+    } else if (state.playing && !state.dragging && state.focus < 0 && !state.ended) {
+      state.pos += state.speed * dt;
+      if (state.pos >= N * S + 1.5) { state.pos = N * S + 1.5; state.ended = true; state.playing = false; updatePlay(); }
+    }
+    state.camZ += (state.camZTarget - state.camZ) * (1 - Math.exp(-dt * 6));
+
+    stars.material.uniforms.uTime.value = reduced ? 0 : now / 1000;
+    dust.material.uniforms.uTime.value = now / 1000;
+    water.material.uniforms.uTime.value = now / 1000;
+
+    updateCards(now);
+
+    if (mouse.has && now - lastHover > 50 && state.focus < 0 && !state.dragging) {
+      lastHover = now;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects([...active.values()].map((e) => e.front), false);
+      const i = hits.length ? hits[0].object.userData.entry.i : -1;
+      if (i !== state.hover) {
+        state.hover = i;
+        const tip = $('tip');
+        if (i >= 0) { const d = describe(i); $('tip-main').textContent = d.main; $('tip-sub').textContent = d.sub; tip.classList.add('show'); }
+        else tip.classList.remove('show');
+      }
+      if (state.hover >= 0) { const tip = $('tip'); tip.style.left = mouse.px + 'px'; tip.style.top = mouse.py + 'px'; }
+    } else if ((!mouse.has || state.dragging) && state.hover >= 0) { state.hover = -1; $('tip').classList.remove('show'); }
+
+    if (now - lastInfo > 90) { lastInfo = now; updateInfo(); }
+    renderer.render(scene, camera);
+  }
+
+  function start() {
+    $('loading').hidden = true;
+    state.pos = 0;
+    updateInfo();
+    requestAnimationFrame((t) => { lastNow = t; frame(t); });
+    setTimeout(() => { if (!state.playing) { state.playing = true; updatePlay(); } }, 700);
+  }
+})();
+</script>
+
+</body>
+</html>
