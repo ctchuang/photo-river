@@ -55,31 +55,39 @@ The product thinking behind this, and the backlog of ideas, is in [docs/PRD.md](
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000/web/time-river.html>. The page loads `data/photos.json` if it exists and fall back to `data/sample/photos.json`.
+Then open <http://localhost:8000/web/time-river.html>. The page loads `data/photos.json` if it exists and falls back to `data/sample/photos.json`.
 
 ## Export your own library
 
 Run the exporter inside the project's `.venv/` with `uv run`:
 
 ```sh
-uv run scripts/export_photos.py > data/photos.json
+uv run scripts/export_photos.py --full --movies --thumbs > data/photos.json
 ```
 
-If you prefer to activate the environment yourself, `source .venv/bin/activate` and then `python scripts/export_photos.py > data/photos.json` does the same thing.
+The flags are optional. Without any, the export is minimal: timestamps
+and GPS only, and the cards are painted placeholders. Add `--full` to
+also export people, scene labels, Apple's aesthetic score and the
+camera model (used by future views), `--movies` to include videos, and
+`--thumbs` to show your real photos (see below).
 
-The default export is minimal: timestamps and GPS only. Add `--full` to also export people, scene labels, Apple's aesthetic score and the camera model (used by future views), and `--movies` to include videos. The exporter uses your System Photo Library; to read a different one, add `--library ~/Pictures/"Other Library.photoslibrary"`. The output is a single JSON file that stays in `data/`, which is ignored by git.
+The exporter uses your System Photo Library; to read a different one,
+add `--library ~/Pictures/"Other Library.photoslibrary"`. The output
+is a single JSON file that stays in `data/`.
 
-Reload the page. The synthetic badge disappears and the river is yours.
+Reload the page. The synthetic badge disappears and the river is
+yours.
 
 ### Thumbnails
 
-By default the cards are painted placeholders. To see your real photos, add `--thumbs`:
-
-```sh
-uv run scripts/export_photos.py --thumbs > data/photos.json
-```
-
-This writes one small JPEG per photo to `data/thumbs/` (384 px on the long edge, about 30 KB each, so roughly 650 MB for 20,000 photos), made with macOS `sips` from the previews Photos already keeps, so edits and rotation are applied and iCloud originals are not downloaded. Thumbnails are named by the photo's Photos ID: re-running only makes the ones that are new, and removes the ones for photos that are gone. Like `data/photos.json`, `data/thumbs/` is ignored by git.
+`--thumbs` also writes one small JPEG per photo to `data/thumbs/` (384
+px on the long edge, about 30 KB each, so roughly 650 MB for 20,000
+photos), made with macOS `sips` from the previews Photos already
+keeps, so edits and rotation are applied and iCloud originals are not
+downloaded. Thumbnails are named by the photo's Photos ID: re-running
+only makes the ones that are new, and removes the ones for photos that
+are gone. Both `data/photos.json` and `data/thumbs/` are ignored by
+git.
 
 ## Repository layout
 
